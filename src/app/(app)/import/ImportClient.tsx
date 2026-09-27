@@ -20,6 +20,7 @@ export function ImportClient() {
     setDone(null); setError(""); setProgress(null);
     if (!f) return;
     if (!/\.csv$/i.test(f.name)) { setError("Choose a .csv file. In Excel: File → Save As → CSV (Comma delimited)."); return; }
+    if (f.size > 4 * 1024 * 1024) setError("This file is over 4 MB. Online hosting (Vercel) rejects uploads that big — split it into smaller files, or use the command-line importer (npm run import).");
     setFile(f);
   };
 
@@ -66,7 +67,7 @@ export function ImportClient() {
         {file ? (
           <div><p className="font-semibold">{file.name}</p><p className="text-sm text-ink-3">{(file.size / 1024 / 1024).toFixed(1)} MB · click to choose another</p></div>
         ) : (
-          <div><p className="font-semibold">Drop your CSV file here, or click to choose</p><p className="text-sm text-ink-3">Up to a few lakh rows per upload</p></div>
+          <div><p className="font-semibold">Drop your CSV file here, or click to choose</p><p className="text-sm text-ink-3">Up to 4 MB per file (about 30,000 rows)</p></div>
         )}
         <input ref={input} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => choose(e.target.files?.[0])} />
       </div>

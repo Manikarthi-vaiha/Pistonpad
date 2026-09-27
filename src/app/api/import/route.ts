@@ -3,7 +3,8 @@ import { currentUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { importProductsCsv } from "@/lib/importer";
 
-export const maxDuration = 3600;
+// Vercel allows up to 300 s on the Hobby plan; very large files should use `npm run import`.
+export const maxDuration = 300;
 
 /** Accepts a raw CSV body and streams progress back as newline-delimited JSON. */
 export async function POST(req: NextRequest) {

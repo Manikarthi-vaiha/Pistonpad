@@ -3,7 +3,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import postgres from "postgres";
 
-const url = process.env.DATABASE_URL;
+// Migrations need a direct (unpooled) connection when one is provided (Neon/Vercel).
+const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
 if (!url) {
   console.error("DATABASE_URL is not set (see .env.example)");
   process.exit(1);

@@ -8,9 +8,14 @@ declare global {
 function create() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.");
+  // Serverless hosts (Vercel) connect through a pooler such as Neon's "-pooler" host or PgBouncer,
+  // which doesn't support prepared statements; keep each function instance's pool small there.
+  const pooled = /-pooler\.|pgbouncer=true/.test(url);
+  const serverless = !!process.env.VERCEL;
   return postgres(url, {
-    max: Number(process.env.DB_POOL_SIZE ?? 10),
-    idle_timeout: 30,
+    max: Number(process.env.DB_POOL_SIZE ?? (serverless ? 3 : 10)),
+    prepare: !pooled,
+    idle_timeout: serverless ? 5 : 30,
     // numeric -> JS number. Money values stay well inside double precision.
     types: {
       numeric: {

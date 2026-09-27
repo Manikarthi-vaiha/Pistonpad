@@ -67,6 +67,22 @@ For very large files, run on the server: `npm run import -- /path/to/parts.csv`.
 
 ## Put it online (cloud)
 
+### Option 0: Vercel + Neon (no server to manage)
+
+1. **vercel.com → Add New → Project → Import** this GitHub repo. Keep the detected Next.js settings.
+2. In the project: **Storage → Create Database → Neon (Postgres)**, pick the region nearest you (e.g. Mumbai or Singapore) and connect it to the project. This adds `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` for you.
+3. **Settings → Environment Variables:** add `SESSION_SECRET` (a long random string: `openssl rand -base64 32`).
+4. **Settings → Functions:** set the function region to the same region as the database. A far-away region makes every page slow.
+5. Redeploy, then create the tables and your owner login once, from your computer:
+   ```bash
+   DATABASE_URL_UNPOOLED="<Neon direct connection string>" ADMIN_USERNAME=admin ADMIN_PASSWORD="<choose one>" npm run db:setup
+   ```
+6. Open the site, sign in, and fill in **Settings** (shop details, GSTIN, logo).
+
+Notes for Vercel:
+- Uploads are limited to about 4.5 MB, so the web importer takes about 30,000 rows per file. For bigger files run `DATABASE_URL_UNPOOLED=… npm run import -- parts.csv` from your computer.
+- Neon's free tier holds 0.5 GB, roughly 5–6 lakh parts with their model links. Don't load the 10-lakh demo data there; use a paid plan for millions of real parts.
+
 ### Option A: one VPS with Docker (simplest, about ₹500–1,500/month)
 
 Any Linux VPS with 2 GB+ RAM (DigitalOcean, Hetzner, AWS Lightsail, etc.):
