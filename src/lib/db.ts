@@ -1,8 +1,10 @@
 import "server-only";
 import postgres from "postgres";
 
+type Db = ReturnType<typeof postgres>;
+
 declare global {
-  var __sql: ReturnType<typeof postgres> | undefined;
+  var __sql: Db | undefined;
 }
 
 function create() {
@@ -34,8 +36,21 @@ function create() {
   });
 }
 
-// Reuse one pool across hot reloads in development.
-export const sql = globalThis.__sql ?? create();
-if (process.env.NODE_ENV !== "production") globalThis.__sql = sql;
+// Connect on first use, not when the module loads: `next build` imports every route
+// and must work without a database (e.g. on Vercel before one is attached).
+// One pool is reused across hot reloads in development.
+function db(): Db {
+  globalThis.__sql ??= create() as unknown as Db;
+  return globalThis.__sql;
+}
 
-export type Sql = typeof sql;
+export const sql = new Proxy(function () {} as unknown as Db, {
+  apply: (_t, _this, args) => (db() as unknown as (...a: unknown[]) => unknown)(...args),
+  get: (_t, prop) => {
+    const target = db();
+    const value = Reflect.get(target, prop, target);
+    return typeof value === "function" ? value.bind(target) : value;
+  },
+});
+
+export type Sql = Db;
