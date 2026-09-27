@@ -73,11 +73,10 @@ For very large files, run on the server: `npm run import -- /path/to/parts.csv`.
 2. In the project: **Storage → Create Database → Neon (Postgres)**, pick the region nearest you (e.g. Mumbai or Singapore) and connect it to the project. This adds `DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` for you.
 3. **Settings → Environment Variables:** add `SESSION_SECRET` (a long random string: `openssl rand -base64 32`).
 4. **Settings → Functions:** set the function region to the same region as the database. A far-away region makes every page slow.
-5. Redeploy, then create the tables and your owner login once, from your computer:
-   ```bash
-   DATABASE_URL_UNPOOLED="<Neon direct connection string>" ADMIN_USERNAME=admin ADMIN_PASSWORD="<choose one>" npm run db:setup
-   ```
-6. Open the site, sign in, and fill in **Settings** (shop details, GSTIN, logo).
+5. Also add `ADMIN_USERNAME` and `ADMIN_PASSWORD` for your first owner login, then redeploy.
+   Every Vercel build runs `scripts/vercel-build.sh`, which applies database migrations and creates
+   the brands, models and owner login if they don't exist yet (it never overwrites them).
+6. Open the site, sign in, change your password, and fill in **Settings** (shop details, GSTIN, logo).
 
 Notes for Vercel:
 - Uploads are limited to about 4.5 MB, so the web importer takes about 30,000 rows per file. For bigger files run `DATABASE_URL_UNPOOLED=… npm run import -- parts.csv` from your computer.

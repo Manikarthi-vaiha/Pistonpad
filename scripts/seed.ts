@@ -29,12 +29,13 @@ async function main() {
   const username = process.env.ADMIN_USERNAME || "admin";
   const password = process.env.ADMIN_PASSWORD;
   const [existing] = await sql`select id from users where username = ${username}`;
-  if (!existing) {
-    if (!password) throw new Error("Set ADMIN_PASSWORD in .env.local before seeding.");
+  if (!existing && !password) {
+    console.warn(`No owner login yet: set ADMIN_PASSWORD (and optionally ADMIN_USERNAME) and run the seed again.`);
+  } else if (!existing && password) {
     await sql`
       insert into users (name, username, password_hash, role)
       values ('Owner', ${username}, ${await bcrypt.hash(password, 10)}, 'owner')`;
-    console.log(`Created owner login "${username}" (password from ADMIN_PASSWORD in .env.local).`);
+    console.log(`Created owner login "${username}" (password from ADMIN_PASSWORD).`);
   }
 
   const [{ brands, models }] = await sql`
