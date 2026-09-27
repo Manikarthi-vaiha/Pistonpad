@@ -1,0 +1,47 @@
+# One-server deployment: PostgreSQL + the app.
+#   cp .env.example .env   (fill in SESSION_SECRET, ADMIN_PASSWORD, POSTGRES_PASSWORD)
+#   docker compose up -d --build
+#   docker compose run --rm setup      # first time only: brands, models, owner login
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: spares
+      POSTGRES_USER: spares
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command: >
+      postgres -c shared_buffers=512MB -c effective_cache_size=1536MB -c work_mem=16MB
+               -c maintenance_work_mem=256MB -c random_page_cost=1.1
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spares -d spares"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://spares:${POSTGRES_PASSWORD}@db:5432/spares
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+    ports:
+      - "3000:3000"
+
+  # One-off tasks that need the full toolchain (seed, CSV import, demo data).
+  setup:
+    build: { context: ., target: builder }
+    profiles: ["tools"]
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      DATABASE_URL: postgres://spares:${POSTGRES_PASSWORD}@db:5432/spares
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+    command: sh -c "node scripts/migrate.mjs && npx tsx scripts/seed.ts"
+
+volumes:
+  pgdata:

@@ -1,0 +1,64 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { currentUser } from "@/lib/auth";
+import { sql } from "@/lib/db";
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+const cell = (v: unknown) => {
+  const s = v === null || v === undefined ? "" : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** Streams CSV so even a full year of item-level sales never sits in memory at once. */
+export async function GET(req: NextRequest) {
+  const user = await currentUser();
+  if (!user || user.role !== "owner") return NextResponse.json({ error: "Only the owner can download reports." }, { status: 403 });
+  const p = req.nextUrl.searchParams;
+  const from = p.get("from") ?? "", to = p.get("to") ?? "", type = p.get("type") ?? "invoices";
+  if (!DATE.test(from) || !DATE.test(to)) return NextResponse.json({ error: "Choose a valid date range." }, { status: 400 });
+
+  let header: string[];
+  let query;
+  if (type === "items") {
+    header = ["Invoice no", "Date", "Customer", "Customer GSTIN", "Part no", "Part", "Brand", "HSN", "Qty", "Unit", "Rate", "Discount %", "Taxable", "GST %", "Tax", "Total", "Cost", "Profit"];
+    query = sql`select i.invoice_no, to_char(i.invoice_date, 'YYYY-MM-DD'), i.customer_name, i.customer_gstin, it.sku, it.name, it.brand, it.hsn,
+                  it.qty, it.unit, it.rate, it.discount_pct, it.taxable, it.gst_rate, it.tax, it.total, it.cost, it.taxable - it.cost
+                from invoice_items it join invoices i on i.id = it.invoice_id
+                where i.invoice_date between ${from} and ${to} and i.status <> 'cancelled' order by i.id, it.id`;
+  } else if (type === "hsn") {
+    header = ["HSN", "UQC", "Total quantity", "Total value", "Taxable value", "IGST", "CGST", "SGST", "GST rate"];
+    query = sql`select it.hsn, upper(min(it.unit)), sum(it.qty), sum(it.total), sum(it.taxable),
+                  sum(case when i.is_interstate then it.tax else 0 end),
+                  round(sum(case when i.is_interstate then 0 else it.tax end) / 2, 2),
+                  round(sum(case when i.is_interstate then 0 else it.tax end) / 2, 2), it.gst_rate
+                from invoice_items it join invoices i on i.id = it.invoice_id
+                where i.invoice_date between ${from} and ${to} and i.status <> 'cancelled'
+                group by it.hsn, it.gst_rate order by it.hsn, it.gst_rate`;
+  } else {
+    header = ["Invoice no", "Date", "Customer", "Phone", "GSTIN", "Inter-state", "Taxable", "CGST", "SGST", "IGST", "Round off", "Total", "Paid", "Balance", "Payment mode", "Status"];
+    query = sql`select invoice_no, to_char(invoice_date, 'YYYY-MM-DD'), customer_name, customer_phone, customer_gstin,
+                  case when is_interstate then 'Yes' else 'No' end, taxable, cgst, sgst, igst, round_off, total, amount_paid,
+                  total - amount_paid, payment_mode, status
+                from invoices where invoice_date between ${from} and ${to} order by id`;
+  }
+
+  const enc = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(ctrl) {
+      ctrl.enqueue(enc.encode("﻿" + header.join(",") + "\n"));
+      try {
+        await query.values().cursor(2000, (rows) => {
+          ctrl.enqueue(enc.encode(rows.map((r) => r.map(cell).join(",")).join("\n") + "\n"));
+        });
+      } catch (e) {
+        console.error(e);
+      }
+      ctrl.close();
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${type}-${from}-to-${to}.csv"`,
+    },
+  });
+}
