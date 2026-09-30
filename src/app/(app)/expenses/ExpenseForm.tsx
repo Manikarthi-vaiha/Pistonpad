@@ -5,6 +5,7 @@ import {
   Check, Coffee, FileText, Home, Landmark, MoreHorizontal, Package, Plus, Smartphone, Tag, Trash2, Truck, Users, Wrench, Zap,
 } from "lucide-react";
 import { Button, Card, CardHeader, cx, Field, Input, Notice, Select } from "@/components/ui";
+import { DatePicker } from "@/components/DatePicker";
 import { EXPENSE_CATEGORIES, EXPENSE_MODES } from "@/lib/expenses";
 import { isoDate } from "@/lib/format";
 import { addExpense, deleteExpense, type ExpenseState } from "./actions";
@@ -34,7 +35,10 @@ export function ExpenseForm({ usedCategories }: { usedCategories: string[] }) {
       {/* key resets the fields after each save */}
       <form key={state.key ?? 0} action={action} className="flex flex-col gap-4 p-5">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Date"><Input type="date" name="date" defaultValue={isoDate()} required /></Field>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-[13px] font-medium text-ink-2">Date</span>
+            <DatePicker name="date" defaultValue={isoDate()} max={isoDate()} ariaLabel="Expense date" />
+          </div>
           <Field label="Amount ₹"><Input name="amount" inputMode="decimal" placeholder="0" required autoFocus /></Field>
         </div>
         <CategoryPicker categories={categories} />

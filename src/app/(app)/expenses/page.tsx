@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Download, Wallet } from "lucide-react";
 import { BarList } from "@/components/charts";
-import { buttonClass, Card, CardHeader, cx, Empty, Input, PageHeader, Table, td, th } from "@/components/ui";
+import { DateRangePicker } from "@/components/DatePicker";
+import { buttonClass, Card, CardHeader, cx, Empty, PageHeader, Table, td, th } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { dateLabel, isoDate, rupees } from "@/lib/format";
@@ -61,10 +62,8 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
                 ))}
               </div>
               <div className="ml-auto flex flex-wrap items-end gap-2">
-                <div className="w-40"><Input type="date" name="from" defaultValue={from} aria-label="From date" /></div>
-                <div className="w-40"><Input type="date" name="to" defaultValue={to} aria-label="To date" /></div>
+                <DateRangePicker from={from} to={to} max={isoDate()} autoSubmit className="w-72 max-w-full" />
                 {cat ? <input type="hidden" name="category" value={cat} /> : null}
-                <button className={buttonClass("secondary")}>Show</button>
               </div>
             </form>
           </Card>

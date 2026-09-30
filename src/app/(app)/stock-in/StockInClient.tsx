@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Trash2 } from "lucide-react";
 import { PartPicker, type PickedPart } from "@/components/PartPicker";
+import { DatePicker } from "@/components/DatePicker";
 import { Button, Card, CardHeader, cx, Field, Input, inputClass, Notice } from "@/components/ui";
 import { isoDate, rupees2 } from "@/lib/format";
 import { savePurchase } from "./actions";
@@ -80,7 +81,7 @@ export function StockInClient({ suppliers, isOwner }: { suppliers: string[]; isO
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Bill no."><Input value={billRef} onChange={(e) => setBillRef(e.target.value)} /></Field>
-            <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+            <div className="flex min-w-0 flex-col gap-1.5"><span className="text-[13px] font-medium text-ink-2">Date</span><DatePicker value={date} onChange={setDate} max={isoDate()} ariaLabel="Supplier bill date" /></div>
           </div>
           {isOwner ? (
             <>

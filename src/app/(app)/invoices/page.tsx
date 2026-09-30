@@ -5,6 +5,8 @@ import { Card, Empty, InvoiceStatus, Input, LinkButton, PageHeader, Select, Tabl
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { count, dateLabel, rupees, timeLabel } from "@/lib/format";
+import { DateRangePicker } from "@/components/DatePicker";
+import { isoDate } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Invoices" };
 const PAGE = 50;
@@ -59,8 +61,7 @@ export default async function InvoicesPage({ searchParams }: PageProps<"/invoice
             <option value="paid">Paid</option>
             <option value="cancelled">Cancelled</option>
           </Select>
-          <Input type="date" name="from" defaultValue={from} aria-label="From date" />
-          <Input type="date" name="to" defaultValue={to} aria-label="To date" />
+          <DateRangePicker from={from} to={to} max={isoDate()} allowAll autoSubmit className="lg:col-span-2" />
           <button className={buttonClass("secondary")}>Apply</button>
         </form>
         {page.length ? (
