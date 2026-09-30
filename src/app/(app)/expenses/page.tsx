@@ -32,7 +32,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
     sql<{ total: number; n: number }[]>`
       select coalesce(sum(amount), 0) as total, count(*)::int as n from expenses
       where expense_date between ${from} and ${to} ${cat ? sql`and category = ${cat}` : sql``}`,
-    sql<{ category: string }[]>`select distinct category from expenses order by category limit 50`,
+    sql<{ category: string }[]>`select category from expenses group by category order by count(*) desc, category limit 30`,
   ]);
 
   const presets = [
@@ -110,7 +110,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
             )}
           </Card>
         </div>
-        <ExpenseForm recentCategories={recentCats.map((c) => c.category)} />
+        <ExpenseForm usedCategories={recentCats.map((c) => c.category)} />
       </div>
     </>
   );
