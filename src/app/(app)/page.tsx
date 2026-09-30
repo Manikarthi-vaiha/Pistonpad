@@ -17,7 +17,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const from30 = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
 
   const [[kpi], series, recent, low, [lowCount], top, parts] = await Promise.all([
-    sql<{ today: number; today_n: number; month: number; month_n: number; month_profit: number; dues: number; due_n: number }[]>`
+    sql<{ today: number; today_n: number; month: number; month_n: number; month_profit: number; dues: number; due_n: number; month_expenses: number }[]>`
       select
         coalesce(sum(total) filter (where invoice_date = ${today}), 0) as today,
         count(*) filter (where invoice_date = ${today})::int as today_n,
@@ -25,7 +25,8 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         count(*) filter (where invoice_date >= ${monthStart})::int as month_n,
         coalesce(sum(taxable - cost_total) filter (where invoice_date >= ${monthStart}), 0) as month_profit,
         (select coalesce(sum(total - amount_paid), 0) from invoices where status in ('due','partial')) as dues,
-        (select count(*)::int from invoices where status in ('due','partial')) as due_n
+        (select count(*)::int from invoices where status in ('due','partial')) as due_n,
+        (select coalesce(sum(amount), 0) from expenses where expense_date >= ${monthStart}) as month_expenses
       from invoices where invoice_date >= least(${monthStart}::date, ${today}::date) and status <> 'cancelled'`,
     sql<{ date: string; value: number }[]>`
       select to_char(d, 'YYYY-MM-DD') as date, coalesce(sum(i.total), 0) as value
@@ -66,7 +67,8 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi icon={IndianRupee} label="Today's sales" value={rupees(kpi.today)} sub={`${kpi.today_n} bill${kpi.today_n === 1 ? "" : "s"}`} accent />
         <Kpi icon={ReceiptIndianRupee} label={`${monthName} sales`} value={rupeesShort(kpi.month)}
-          sub={owner ? `${count(kpi.month_n)} bills · profit ${rupeesShort(kpi.month_profit)}` : `${count(kpi.month_n)} bills`} />
+          sub={owner ? `${count(kpi.month_n)} bills · net profit ${rupeesShort(kpi.month_profit - kpi.month_expenses)}` : `${count(kpi.month_n)} bills`}
+          href={owner ? "/reports?range=month" : undefined} />
         <Kpi icon={Wallet} label="Credit to collect" value={rupeesShort(kpi.dues)} sub={`${kpi.due_n} unpaid bill${kpi.due_n === 1 ? "" : "s"}`} href="/invoices?status=unpaid" tone={kpi.dues > 0 ? "warn" : undefined} />
         <Kpi icon={Boxes} label="Parts in catalogue" value={count(parts)} sub={`${lowCount.n > 10000 ? "10,000+" : count(lowCount.n)} need reordering`} href="/products?stock=low" tone={lowCount.n > 0 ? "warn" : undefined} />
       </div>

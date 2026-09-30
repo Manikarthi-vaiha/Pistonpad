@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Boxes, FileText, LayoutDashboard, LogOut, Menu, PackagePlus, ReceiptIndianRupee, Settings, Upload, Users, X,
+  BarChart3, Boxes, FileText, LayoutDashboard, LogOut, Menu, PackagePlus, ReceiptIndianRupee, Settings, Upload, Users, Wallet, X,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cx } from "./ui";
@@ -32,6 +32,7 @@ const NAV: { section: string; items: Item[] }[] = [
   {
     section: "Business",
     items: [
+      { href: "/expenses", label: "Expenses", icon: Wallet },
       { href: "/reports", label: "Reports", icon: BarChart3, owner: true },
       { href: "/settings", label: "Settings", icon: Settings, owner: true },
     ],

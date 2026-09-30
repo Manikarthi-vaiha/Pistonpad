@@ -3,7 +3,7 @@ import { sql } from "./db";
 
 export async function salesReport(from: string, to: string) {
   const range = sql`i.invoice_date between ${from} and ${to} and i.status <> 'cancelled'`;
-  const [[summary], daily, modes, gst, b2b, topParts, brands, categories] = await Promise.all([
+  const [[summary], daily, modes, gst, b2b, topParts, brands, categories, expenses] = await Promise.all([
     sql<{ bills: number; total: number; taxable: number; cgst: number; sgst: number; igst: number; cost: number; paid: number; discount: number; cancelled: number }[]>`
       select count(*)::int as bills, coalesce(sum(total), 0) as total, coalesce(sum(taxable), 0) as taxable,
              coalesce(sum(cgst), 0) as cgst, coalesce(sum(sgst), 0) as sgst, coalesce(sum(igst), 0) as igst,
@@ -38,6 +38,11 @@ export async function salesReport(from: string, to: string) {
       from invoice_items it join invoices i on i.id = it.invoice_id
       join products p on p.id = it.product_id left join categories c on c.id = p.category_id
       where ${range} group by 1 order by 2 desc limit 12`,
+    sql<{ label: string; value: number; n: number }[]>`
+      select category as label, sum(amount) as value, count(*)::int as n
+      from expenses where expense_date between ${from} and ${to} group by 1 order by 2 desc`,
   ]);
-  return { summary, daily, modes, gst, b2b, topParts, brands, categories };
+  const expenseTotal = expenses.reduce((s, e) => s + e.value, 0);
+  const grossProfit = summary.taxable - summary.cost;
+  return { summary, daily, modes, gst, b2b, topParts, brands, categories, expenses, expenseTotal, grossProfit, netProfit: grossProfit - expenseTotal };
 }

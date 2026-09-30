@@ -18,7 +18,12 @@ export async function GET(req: NextRequest) {
 
   let header: string[];
   let query;
-  if (type === "items") {
+  if (type === "expenses") {
+    header = ["Date", "Category", "Amount", "Paid by", "Paid to", "Note", "Added by"];
+    query = sql`select to_char(e.expense_date, 'YYYY-MM-DD'), e.category, e.amount, e.payment_mode, e.paid_to, e.note, coalesce(u.name, '')
+                from expenses e left join users u on u.id = e.user_id
+                where e.expense_date between ${from} and ${to} order by e.expense_date, e.id`;
+  } else if (type === "items") {
     header = ["Invoice no", "Date", "Customer", "Customer GSTIN", "Part no", "Part", "Brand", "HSN", "Qty", "Unit", "Rate", "Discount %", "Taxable", "GST %", "Tax", "Total", "Cost", "Profit"];
     query = sql`select i.invoice_no, to_char(i.invoice_date, 'YYYY-MM-DD'), i.customer_name, i.customer_gstin, it.sku, it.name, it.brand, it.hsn,
                   it.qty, it.unit, it.rate, it.discount_pct, it.taxable, it.gst_rate, it.tax, it.total, it.cost, it.taxable - it.cost

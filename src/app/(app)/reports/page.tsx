@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Fragment } from "react";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { AreaChart, BarList } from "@/components/charts";
@@ -32,7 +33,8 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   const to = chosen?.to ?? (sp.to as string);
   const r = await salesReport(from, to);
   const s = r.summary;
-  const profit = s.taxable - s.cost;
+  const profit = r.grossProfit;
+  const net = r.netProfit;
   const days = r.daily.length;
 
   return (
@@ -64,12 +66,30 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         </form>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Tile label="Net sales (incl. GST)" value={rupees(s.total)} sub={`${count(s.bills)} bills${s.cancelled ? ` · ${s.cancelled} cancelled` : ""}`} />
         <Tile label="GST collected" value={rupees(s.cgst + s.sgst + s.igst)} sub={`CGST ${rupees(s.cgst)} · SGST ${rupees(s.sgst)}${s.igst ? ` · IGST ${rupees(s.igst)}` : ""}`} />
         <Tile label="Gross profit" value={rupees(profit)} sub={`Margin ${s.taxable ? ((profit / s.taxable) * 100).toFixed(1) : "0"}% on ${rupees(s.taxable)} taxable`} tone="good" />
+        <Tile label="Expenses" value={rupees(r.expenseTotal)} sub={r.expenses.length ? `${r.expenses.length} categor${r.expenses.length === 1 ? "y" : "ies"} · largest ${r.expenses[0].label}` : "None recorded in this period"} tone={r.expenseTotal ? "warn" : undefined} href={`/expenses?from=${from}&to=${to}`} />
+        <Tile label="Net profit" value={rupees(net)} sub={`Gross profit − expenses${s.taxable ? ` · ${((net / s.taxable) * 100).toFixed(1)}% of sales` : ""}`} tone={net >= 0 ? "good" : "bad"} strong />
         <Tile label="Still to collect" value={rupees(s.total - s.paid)} sub={`${rupees(s.paid)} received`} tone={s.total - s.paid > 0 ? "warn" : undefined} />
       </div>
+
+      <Card className="mt-4">
+        <CardHeader title="Profit and loss" sub="All amounts before GST (GST collected is owed to the government, not profit)" />
+        <dl className="num grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 px-5 py-4 text-sm sm:max-w-xl">
+          <dt>Sales (taxable value)</dt><dd className="text-right">{rupees2(s.taxable)}</dd>
+          <dt className="text-ink-2">− Cost of parts sold</dt><dd className="text-right text-ink-2">{rupees2(s.cost)}</dd>
+          <dt className="border-t border-line pt-2 font-semibold">Gross profit</dt><dd className="border-t border-line pt-2 text-right font-semibold">{rupees2(profit)}</dd>
+          {r.expenses.map((e) => (
+            <Fragment key={e.label}><dt className="pl-3 text-ink-2">− {e.label}</dt><dd className="text-right text-ink-2">{rupees2(e.value)}</dd></Fragment>
+          ))}
+          {!r.expenses.length ? <><dt className="pl-3 text-ink-3">− Expenses</dt><dd className="text-right text-ink-3">{rupees2(0)}</dd></> : null}
+          <dt className={cx("border-t-2 border-ink pt-2 text-base font-bold", net < 0 && "text-bad")}>{net >= 0 ? "Net profit" : "Net loss"}</dt>
+          <dd className={cx("border-t-2 border-ink pt-2 text-right text-base font-bold", net < 0 ? "text-bad" : "text-good")}>{rupees2(net)}</dd>
+        </dl>
+        {!r.expenses.length ? <p className="px-5 pb-4 text-[13px] text-ink-3">No expenses recorded for these dates. <Link className="font-semibold text-primary hover:underline" href="/expenses">Add expenses</Link> to see your true profit.</p> : null}
+      </Card>
 
       {s.bills ? (
         <>
@@ -131,12 +151,13 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
   );
 }
 
-function Tile({ label, value, sub, tone }: { label: string; value: string; sub: string; tone?: "good" | "warn" }) {
-  return (
-    <div className="rounded-xl border border-line bg-surface p-5">
+function Tile({ label, value, sub, tone, href, strong }: { label: string; value: string; sub: string; tone?: "good" | "warn" | "bad"; href?: string; strong?: boolean }) {
+  const body = (
+    <div className={cx("h-full rounded-xl border p-5 transition-colors", strong ? (tone === "bad" ? "border-bad/40 bg-bad-soft" : "border-good/30 bg-good-soft") : "border-line bg-surface", href && "hover:border-line-2")}>
       <p className="text-[13px] text-ink-2">{label}</p>
-      <p className={cx("num mt-2 text-[26px] leading-none font-bold tracking-tight", tone === "good" && "text-good", tone === "warn" && "text-warn")}>{value}</p>
+      <p className={cx("num mt-2 text-[26px] leading-none font-bold tracking-tight", tone === "good" && "text-good", tone === "warn" && "text-warn", tone === "bad" && "text-bad")}>{value}</p>
       <p className="mt-2 text-[12.5px] text-ink-3">{sub}</p>
     </div>
   );
+  return href ? <Link href={href} className="block">{body}</Link> : body;
 }
