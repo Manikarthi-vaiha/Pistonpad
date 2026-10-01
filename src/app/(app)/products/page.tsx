@@ -43,7 +43,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
               <tr>
                 <th className={th}>Part no.</th><th className={th}>Part</th><th className={th}>Fits</th><th className={th}>Rack</th>
                 {user.role === "owner" ? <th className={`${th} text-right`}>Cost</th> : null}
-                <th className={`${th} text-right`}>Rate</th><th className={th}>Stock</th>
+                <th className={`${th} text-right`}>Wholesale</th><th className={`${th} text-right`}>Showroom</th><th className={th}>Stock</th>
               </tr>
             </thead>
             <tbody>
@@ -62,6 +62,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                   <td className={`${td} text-ink-2`}>{p.rack || "—"}</td>
                   {user.role === "owner" ? <td className={`${td} text-right text-ink-2`}>{rupees2(p.cost_price)}</td> : null}
                   <td className={`${td} text-right font-semibold`}>{rupees2(p.sale_price)}</td>
+                  <td className={`${td} text-right`}>{p.retail_price != null ? rupees2(p.retail_price) : <span className="text-ink-3">—</span>}</td>
                   <td className={td}><StockBadge stock={p.stock} reorder={p.reorder_level} /></td>
                 </tr>
               ))}

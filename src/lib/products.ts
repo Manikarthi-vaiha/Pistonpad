@@ -11,7 +11,9 @@ export type ProductRow = {
   unit: string;
   hsn: string;
   cost_price: number;
+  showroom_cost: number | null;
   sale_price: number;
+  retail_price: number | null;
   mrp: number | null;
   gst_rate: number;
   stock: number;
@@ -68,7 +70,7 @@ export async function searchProducts(f: ProductFilter) {
 
   const rows = await sql<ProductRow[]>`
     select p.id, p.sku, p.name, b.name::text as brand, p.brand_id, c.name::text as category, p.unit, p.hsn,
-           p.cost_price, p.sale_price, p.mrp, p.gst_rate, p.stock, p.reorder_level, p.rack, p.active,
+           p.cost_price, p.showroom_cost, p.sale_price, p.retail_price, p.mrp, p.gst_rate, p.stock, p.reorder_level, p.rack, p.active,
            coalesce(b.is_universal, false) as is_universal,
            coalesce(f.fits, '{}') as fits, coalesce(f.n, 0)::int as fits_count
     from (
@@ -90,7 +92,7 @@ export async function searchProducts(f: ProductFilter) {
   if (exact.length && !page.some((r) => r.id === exact[0].id)) {
     const [hit] = await sql<ProductRow[]>`
       select p.id, p.sku, p.name, b.name::text as brand, p.brand_id, c.name::text as category, p.unit, p.hsn,
-             p.cost_price, p.sale_price, p.mrp, p.gst_rate, p.stock, p.reorder_level, p.rack, p.active,
+             p.cost_price, p.showroom_cost, p.sale_price, p.retail_price, p.mrp, p.gst_rate, p.stock, p.reorder_level, p.rack, p.active,
              coalesce(b.is_universal, false) as is_universal, '{}'::text[] as fits, 0 as fits_count
       from products p left join brands b on b.id = p.brand_id left join categories c on c.id = p.category_id
       where p.id = ${exact[0].id}`;

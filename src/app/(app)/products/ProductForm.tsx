@@ -9,7 +9,7 @@ import { saveProduct, type FormState } from "./actions";
 
 export type ProductFormValues = {
   id?: number; sku: string; name: string; brand_id: number | null; category_id: number | null; hsn: string; unit: string;
-  cost_price: number; sale_price: number; mrp: number | null; gst_rate: number; reorder_level: number; rack: string;
+  cost_price: number; showroom_cost: number | null; sale_price: number; retail_price: number | null; mrp: number | null; gst_rate: number; reorder_level: number; rack: string;
   model_ids: number[]; active: boolean;
 };
 
@@ -24,6 +24,8 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
   const [filter, setFilter] = useState("");
   const [cost, setCost] = useState(String(initial?.cost_price ?? ""));
   const [price, setPrice] = useState(String(initial?.sale_price ?? ""));
+  const [showroomCost, setShowroomCost] = useState(initial?.showroom_cost != null ? String(initial.showroom_cost) : "");
+  const [retail, setRetail] = useState(initial?.retail_price != null ? String(initial.retail_price) : "");
 
   useEffect(() => {
     if (state.ok && state.id) router.push(`/products/${state.id}?saved=1`);
@@ -33,7 +35,8 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
   const brandModels = useMemo(() => catalog.models.filter((m) => String(m.brand_id) === brandId), [catalog, brandId]);
   const shown = brandModels.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase()));
   const otherPicked = catalog.models.filter((m) => picked.has(m.id) && String(m.brand_id) !== brandId);
-  const margin = Number(price) && Number(cost) ? ((Number(price) - Number(cost)) / Number(price)) * 100 : null;
+  const marginOf = (sell: string, buy: string) => (Number(sell) && Number(buy) ? `${(((Number(sell) - Number(buy)) / Number(sell)) * 100).toFixed(1)}%` : null);
+  const margin = marginOf(price, cost);
 
   const toggle = (id: number) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
@@ -98,15 +101,39 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
       </Card>
 
       <Card>
-        <CardHeader title="Price, tax and stock" />
-        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          {isOwner ? (
-            <Field label="Cost price ₹" hint="What you pay the supplier, before GST"><Input name="costPrice" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
-          ) : <input type="hidden" name="costPrice" value={cost} />}
-          <Field label="Wholesale rate ₹" hint={isOwner && margin !== null ? `Margin ${margin.toFixed(1)}%` : "Before GST"}>
-            <Input name="salePrice" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required />
-          </Field>
-          <Field label="MRP ₹ (optional)"><Input name="mrp" inputMode="decimal" defaultValue={initial?.mrp ?? ""} /></Field>
+        <CardHeader title="Price, tax and stock" sub="All prices before GST" />
+        <div className="grid grid-cols-1 gap-6 p-5 2xl:grid-cols-[2fr_3fr]">
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-3 text-[11.5px] font-semibold tracking-wider text-ink-3 uppercase">Buying prices</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {isOwner ? (
+                <Field label="Cost price ₹" hint="From your regular supplier"><Input name="costPrice" inputMode="decimal" value={cost} onChange={(e) => setCost(e.target.value)} /></Field>
+              ) : <input type="hidden" name="costPrice" value={cost} />}
+              <Field label="Showroom cost ₹" hint="When you buy it from a showroom / outside market">
+                <Input name="showroomCost" inputMode="decimal" value={showroomCost} onChange={(e) => setShowroomCost(e.target.value)} placeholder="Optional" />
+              </Field>
+            </div>
+          </fieldset>
+          <fieldset className="flex flex-col gap-3">
+            <legend className="mb-3 text-[11.5px] font-semibold tracking-wider text-ink-3 uppercase">Selling prices</legend>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Wholesale rate ₹" hint={isOwner && margin ? `Mechanics & dealers · margin ${margin}` : "Mechanics & dealers"}>
+                <Input name="salePrice" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required />
+              </Field>
+              <Field label="Showroom rate ₹" hint={isOwner && marginOf(retail, cost) ? `Walk-in customers · margin ${marginOf(retail, cost)}` : "Walk-in customers"}>
+                <Input name="retailPrice" inputMode="decimal" value={retail} onChange={(e) => setRetail(e.target.value)} placeholder={price || "Optional"} />
+              </Field>
+              <Field label="MRP ₹" hint="Optional"><Input name="mrp" inputMode="decimal" defaultValue={initial?.mrp ?? ""} /></Field>
+            </div>
+          </fieldset>
+        </div>
+        {Number(showroomCost) && (Number(retail) || Number(price)) ? (
+          <p className="mx-5 -mt-2 mb-4 rounded-lg bg-surface-2 px-3 py-2 text-[13px] text-ink-2">
+            Bought outside at {showroomCost} and sold at the showroom rate {retail || price}: profit ₹{(Number(retail || price) - Number(showroomCost)).toFixed(2)} each
+            {Number(retail || price) < Number(showroomCost) ? <span className="font-semibold text-bad"> (a loss)</span> : null}.
+          </p>
+        ) : null}
+        <div className="grid grid-cols-1 gap-4 border-t border-line p-5 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="GST rate">
             <Select name="gstRate" defaultValue={initial?.gst_rate ?? 18}>
               {[0, 5, 12, 18, 28].map((g) => <option key={g} value={g}>{g}%</option>)}
@@ -128,7 +155,7 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
         </div>
         {isOwner && Number(price) < Number(cost) ? (
           <label className="mx-5 mb-5 flex items-center gap-2 text-sm text-warn">
-            <input type="checkbox" name="confirmLoss" value="yes" className="h-4 w-4" /> Sell below cost (rate is lower than cost price)
+            <input type="checkbox" name="confirmLoss" value="yes" className="h-4 w-4" /> Sell below cost (wholesale rate is lower than cost price)
           </label>
         ) : null}
       </Card>

@@ -6,12 +6,12 @@
 import type { Sql } from "postgres";
 import { CsvParser } from "./csv";
 
-export const IMPORT_COLUMNS = ["sku", "name", "brand", "category", "models", "hsn", "unit", "cost_price", "sale_price", "mrp", "gst_rate", "stock", "reorder_level", "rack"] as const;
+export const IMPORT_COLUMNS = ["sku", "name", "brand", "category", "models", "hsn", "unit", "cost_price", "showroom_cost", "sale_price", "retail_price", "mrp", "gst_rate", "stock", "reorder_level", "rack"] as const;
 export const IMPORT_TEMPLATE =
   IMPORT_COLUMNS.join(",") + "\n" +
-  `HR-BS-001,Brake shoe set,Hero,Brakes,Splendor Plus|Passion Pro|HF Deluxe,8714,set,95,125,160,18,40,10,R4-B\n` +
-  `TV-VB-010,Drive belt,TVS,Transmission,Jupiter|Jupiter 110|Wego,8714,pcs,480,590,720,18,12,5,R9-A\n` +
-  `UN-HRN-12,Horn 12V,Universal,Electricals,,8714,pcs,85,120,150,18,100,20,U1\n`;
+  `HR-BS-001,Brake shoe set,Hero,Brakes,Splendor Plus|Passion Pro|HF Deluxe,8714,set,95,130,125,145,160,18,40,10,R4-B\n` +
+  `TV-VB-010,Drive belt,TVS,Transmission,Jupiter|Jupiter 110|Wego,8714,pcs,480,560,590,650,720,18,12,5,R9-A\n` +
+  `UN-HRN-12,Horn 12V,Universal,Electricals,,8714,pcs,85,,120,140,150,18,100,20,U1\n`;
 
 export type ImportStats = { rows: number; inserted: number; updated: number; skipped: number; errors: string[] };
 type Row = Record<(typeof IMPORT_COLUMNS)[number], string>;
@@ -81,6 +81,7 @@ export async function importProductsCsv(sql: Sql<Record<string, unknown>>, chunk
           sku, name, brand_id: bid, category_id: await catId(r.category ?? ""),
           hsn: r.hsn?.trim() || "8714", unit: r.unit?.trim() || "pcs",
           cost_price: num(r.cost_price ?? "") ?? 0, sale_price: num(r.sale_price ?? "") ?? 0, mrp: num(r.mrp ?? ""),
+          showroom_cost: num(r.showroom_cost ?? ""), retail_price: num(r.retail_price ?? ""),
           gst_rate: gst, reorder_level: Math.max(0, Math.round(num(r.reorder_level ?? "") ?? 0)), rack: r.rack?.trim() ?? "",
         },
         stock: r.stock?.trim() ? Math.round(num(r.stock) ?? 0) : null,
@@ -101,6 +102,7 @@ export async function importProductsCsv(sql: Sql<Record<string, unknown>>, chunk
                 name = excluded.name, brand_id = coalesce(excluded.brand_id, products.brand_id),
                 category_id = coalesce(excluded.category_id, products.category_id), hsn = excluded.hsn, unit = excluded.unit,
                 cost_price = excluded.cost_price, sale_price = excluded.sale_price, mrp = excluded.mrp, gst_rate = excluded.gst_rate,
+                showroom_cost = coalesce(excluded.showroom_cost, products.showroom_cost), retail_price = coalesce(excluded.retail_price, products.retail_price),
                 reorder_level = excluded.reorder_level, rack = excluded.rack, updated_at = now()
                 ${setStock ? tx`, stock = excluded.stock` : tx``}
               returning id, lower(sku) as k, stock, (xmax = 0) as inserted`

@@ -2,14 +2,19 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Minus, Plus, Trash2, UserRound, X } from "lucide-react";
+import { AlertCircle, Minus, Plus, Store, Trash2, UserRound, X } from "lucide-react";
 import { PartPicker, type PartPickerHandle, type PickedPart } from "@/components/PartPicker";
 import { Badge, Button, Card, CardHeader, cx, Field, Input, inputClass, Kbd, Notice } from "@/components/ui";
 import { calcBill } from "@/lib/billing-calc";
 import { GSTIN_RE, GST_STATES, rupees, rupees2 } from "@/lib/format";
 import { saveBill } from "../invoices/actions";
 
-type Line = { key: string; part: PickedPart; qty: number; rate: number; discountPct: number };
+type Source = "stock" | "outside";
+type PriceType = "wholesale" | "showroom";
+type Line = { key: string; part: PickedPart; qty: number; rate: number; discountPct: number; source: Source; outsideCost: number | null };
+
+/** Selling rate for the chosen rate list; showroom falls back to wholesale when no showroom rate is set. */
+const rateFor = (p: PickedPart, t: PriceType) => (t === "showroom" ? (p.retail_price ?? p.sale_price) : p.sale_price);
 type Customer = { id?: number; name: string; phone: string; gstin: string; due?: number; limit?: number };
 type CustomerHit = { id: number; name: string; phone: string | null; gstin: string; state_code: string; due: number; credit_limit: number };
 
@@ -23,6 +28,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
   const [mode, setMode] = useState<(typeof MODES)[number]>("Cash");
   const [paidInput, setPaidInput] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [priceType, setPriceType] = useState<PriceType>("wholesale");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
@@ -51,30 +57,44 @@ export function BillingClient({ shopState }: { shopState: string }) {
     setLines((ls) => {
       const i = ls.findIndex((l) => l.part.id === p.id);
       if (i >= 0) return ls.map((l, j) => (j === i ? { ...l, qty: l.qty + 1 } : l));
-      return [...ls, { key: `${p.id}-${Date.now()}`, part: p, qty: 1, rate: p.sale_price, discountPct: 0 }];
+      // Out of stock → assume it's being fetched from a showroom / outside market for this sale.
+      return [...ls, {
+        key: `${p.id}-${Date.now()}`, part: p, qty: 1, rate: rateFor(p, priceType), discountPct: 0,
+        source: p.stock > 0 ? "stock" : "outside", outsideCost: p.showroom_cost,
+      }];
     });
   };
   const update = (key: string, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const remove = (key: string) => setLines((ls) => ls.filter((l) => l.key !== key));
+  const switchPriceType = (t: PriceType) => {
+    setPriceType(t);
+    setLines((ls) => ls.map((l) => ({ ...l, rate: rateFor(l.part, t) })));
+  };
   const reset = () => {
     setLines([]); setCustomer({ name: "", phone: "", gstin: "" }); setMode("Cash"); setPaidInput(null); setNotes(""); setError(""); setInterstateOverride(null);
     picker.current?.focus();
   };
 
-  const overStock = lines.filter((l) => l.qty > l.part.stock);
+  const overStock = lines.filter((l) => l.source === "stock" && l.qty > l.part.stock);
+  const outsideMissingCost = lines.filter((l) => l.source === "outside" && !l.outsideCost);
   const gstinBad = customer.gstin.length > 0 && !GSTIN_RE.test(customer.gstin);
 
   const submit = () => {
     setError("");
     if (!lines.length) return setError("Add at least one part to the bill.");
-    if (overStock.length) return setError(`Not enough stock for ${overStock.map((l) => l.part.name).join(", ")}. Lower the quantity or add stock first.`);
+    if (overStock.length) return setError(`Not enough stock for ${overStock.map((l) => l.part.name).join(", ")}. Lower the quantity, add stock, or mark it “Bought outside”.`);
+    if (outsideMissingCost.length) return setError(`Enter what you paid outside for ${outsideMissingCost.map((l) => l.part.name).join(", ")}.`);
     if (gstinBad) return setError("The GSTIN doesn't look right. It should be 15 characters, like 33ABCDE1234F1Z5.");
     if (mode === "Credit" && !customer.name.trim() && !customer.id) return setError("Enter the customer's name for a credit bill.");
     start(async () => {
       const r = await saveBill({
         customer: { id: customer.id, name: customer.name.trim(), phone: customer.phone.trim(), gstin: customer.gstin.trim().toUpperCase() },
-        items: lines.map((l) => ({ productId: l.part.id, qty: l.qty, rate: l.rate, discountPct: l.discountPct })),
+        items: lines.map((l) => ({
+          productId: l.part.id, qty: l.qty, rate: l.rate, discountPct: l.discountPct,
+          source: l.source, outsideCost: l.source === "outside" ? l.outsideCost ?? undefined : undefined,
+        })),
         interstate,
+        priceType,
         paymentMode: mode,
         amountPaid: Math.min(paid, bill.total),
         notes,
@@ -89,13 +109,25 @@ export function BillingClient({ shopState }: { shopState: string }) {
       <div className="flex min-w-0 flex-col gap-5">
         <Card>
           <CardHeader title="Add parts" sub="Search by part number, name, or pick the customer's bike" />
-          <div className="p-5"><PartPicker ref={picker} onPick={add} /></div>
+          <div className="p-5"><PartPicker ref={picker} onPick={add} allowOutOfStock priceField={priceType === "showroom" ? "retail_price" : "sale_price"} /></div>
         </Card>
 
         <Card>
           <CardHeader
             title={<span className="flex items-center gap-2">Bill items <Badge tone="primary">{lines.length}</Badge></span>}
-            action={lines.length ? <Button size="sm" variant="ghost" onClick={() => setLines([])}>Clear items</Button> : null}
+            action={
+              <div className="flex items-center gap-2">
+                <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-2 p-1" role="radiogroup" aria-label="Rate list">
+                  {(["wholesale", "showroom"] as const).map((t) => (
+                    <button key={t} role="radio" aria-checked={priceType === t} onClick={() => switchPriceType(t)}
+                      className={cx("rounded-md px-3 py-1.5 text-[12.5px] font-semibold", priceType === t ? "bg-surface text-ink shadow-sm ring-1 ring-line-2" : "text-ink-2 hover:text-ink")}>
+                      {t === "wholesale" ? "Wholesale rate" : "Showroom rate"}
+                    </button>
+                  ))}
+                </div>
+                {lines.length ? <Button size="sm" variant="ghost" onClick={() => setLines([])}>Clear</Button> : null}
+              </div>
+            }
           />
           {lines.length ? (
             <div className="overflow-x-auto">
@@ -114,13 +146,32 @@ export function BillingClient({ shopState }: { shopState: string }) {
                 <tbody>
                   {lines.map((l, i) => {
                     const c = bill.lines[i];
-                    const over = l.qty > l.part.stock;
+                    const over = l.source === "stock" && l.qty > l.part.stock;
                     return (
                       <tr key={l.key} className="border-t border-line align-top">
                         <td className="px-5 py-3">
                           <p className="font-medium">{l.part.name}</p>
                           <p className="font-mono text-xs text-ink-3">{l.part.sku}{l.part.rack ? ` · Rack ${l.part.rack}` : ""}</p>
-                          {over ? <p className="mt-1 flex items-center gap-1 text-xs font-medium text-bad"><AlertCircle className="h-3.5 w-3.5" /> Only {l.part.stock} in stock</p> : null}
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <div className="inline-flex rounded-md border border-line-2 p-0.5 text-[11.5px] font-semibold" role="radiogroup" aria-label={`Source of ${l.part.name}`}>
+                              {(["stock", "outside"] as const).map((src) => (
+                                <button key={src} role="radio" aria-checked={l.source === src} onClick={() => update(l.key, { source: src })}
+                                  className={cx("flex items-center gap-1 rounded px-2 py-1 whitespace-nowrap", l.source === src ? (src === "outside" ? "bg-warn-soft text-warn" : "bg-primary-soft text-primary") : "text-ink-3 hover:text-ink")}>
+                                  {src === "outside" ? <Store className="h-3 w-3" /> : null}{src === "stock" ? `Stock (${l.part.stock})` : "Bought outside"}
+                                </button>
+                              ))}
+                            </div>
+                            {l.source === "outside" ? (
+                              <label className="flex items-center gap-1.5 text-xs whitespace-nowrap text-ink-2">
+                                Paid ₹
+                                <input className={cx(inputClass, "h-7 w-20 px-2 text-right text-xs", !l.outsideCost && "border-bad")} inputMode="decimal"
+                                  defaultValue={l.outsideCost ?? ""} placeholder="0" aria-label={`Price paid outside for ${l.part.name}`}
+                                  onChange={(e) => update(l.key, { outsideCost: Number(e.target.value) > 0 ? Number(e.target.value) : null })} />
+                                each
+                              </label>
+                            ) : null}
+                          </div>
+                          {over ? <p className="mt-1 flex items-center gap-1 text-xs font-medium text-bad"><AlertCircle className="h-3.5 w-3.5" /> Only {l.part.stock} in stock — or mark “Bought outside”</p> : null}
                         </td>
                         <td className="px-2 py-3">
                           <div className="mx-auto flex w-[118px] items-center rounded-lg border border-line-2">
@@ -132,7 +183,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
                           <p className="mt-1 text-center text-[11px] text-ink-3">{l.part.unit}</p>
                         </td>
                         <td className="px-2 py-3">
-                          <input className={cx(inputClass, "h-9 w-24 text-right")} inputMode="decimal" defaultValue={l.rate}
+                          <input key={priceType} className={cx(inputClass, "h-9 w-24 text-right")} inputMode="decimal" defaultValue={l.rate}
                             onChange={(e) => update(l.key, { rate: Math.max(0, Number(e.target.value) || 0) })} aria-label="Rate" />
                         </td>
                         <td className="px-2 py-3">

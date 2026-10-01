@@ -9,7 +9,8 @@ export const metadata: Metadata = { title: "Import parts" };
 const HELP: Record<string, string> = {
   sku: "Part number (required, unique)", name: "Part name (required)", brand: "Hero, Honda, TVS… or Universal",
   category: "Brakes, Engine…", models: "Bike models it fits, separated by |", hsn: "HSN code (default 8714)", unit: "pcs, set, pair, kit…",
-  cost_price: "Your buying price", sale_price: "Wholesale rate before GST", mrp: "Optional", gst_rate: "0, 5, 12, 18 or 28",
+  cost_price: "Your buying price from your supplier", showroom_cost: "Optional: price when bought from a showroom / outside market",
+  sale_price: "Wholesale rate before GST", retail_price: "Optional: showroom rate for walk-in customers", mrp: "Optional", gst_rate: "0, 5, 12, 18 or 28",
   stock: "Quantity on hand. Leave empty to keep current stock", reorder_level: "Reorder alert level", rack: "Shelf / bin",
 };
 

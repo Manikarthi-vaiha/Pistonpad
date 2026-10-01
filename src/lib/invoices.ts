@@ -20,10 +20,15 @@ export const invoiceInput = z.object({
       qty: z.number().int().positive().max(100000),
       rate: z.number().nonnegative().max(10_000_000),
       discountPct: z.number().min(0).max(100).default(0),
+      // "outside": bought from a showroom / outside market for this sale — doesn't use stock.
+      source: z.enum(["stock", "outside"]).default("stock"),
+      // What was paid outside, per unit (outside lines only; defaults to the part's showroom cost).
+      outsideCost: z.number().nonnegative().max(10_000_000).optional(),
     }))
     .min(1, "Add at least one part to the bill.")
     .max(300),
   interstate: z.boolean().default(false),
+  priceType: z.enum(["wholesale", "showroom"]).default("wholesale"),
   paymentMode: z.enum(PAYMENT_MODES),
   amountPaid: z.number().nonnegative(),
   notes: z.string().max(500).default(""),
@@ -46,27 +51,32 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
   const ids = [...new Set(items.map((i) => i.productId))];
 
   return sql.begin(async (tx) => {
-    const products = await tx<{ id: number; sku: string; name: string; hsn: string; unit: string; gst_rate: number; cost_price: number; stock: number; brand: string; active: boolean }[]>`
-      select p.id, p.sku, p.name, p.hsn, p.unit, p.gst_rate, p.cost_price, p.stock, p.active, coalesce(b.name::text, '') as brand
+    const products = await tx<{ id: number; sku: string; name: string; hsn: string; unit: string; gst_rate: number; cost_price: number; showroom_cost: number | null; stock: number; brand: string; active: boolean }[]>`
+      select p.id, p.sku, p.name, p.hsn, p.unit, p.gst_rate, p.cost_price, p.showroom_cost, p.stock, p.active, coalesce(b.name::text, '') as brand
       from products p left join brands b on b.id = p.brand_id
       where p.id = any(${ids}::bigint[])
       order by p.id
       for update of p`;
     const byId = new Map(products.map((p) => [p.id, p]));
 
+    // Only lines sold from own stock need (and reduce) stock.
     const need = new Map<number, number>();
-    for (const it of items) need.set(it.productId, (need.get(it.productId) ?? 0) + it.qty);
+    for (const it of items) {
+      const p = byId.get(it.productId);
+      if (!p || !p.active) throw new BillError("A part on this bill was deleted or disabled. Remove it and try again.");
+      if (it.source === "stock") need.set(it.productId, (need.get(it.productId) ?? 0) + it.qty);
+    }
     const short: string[] = [];
     for (const [id, q] of need) {
-      const p = byId.get(id);
-      if (!p || !p.active) throw new BillError("A part on this bill was deleted or disabled. Remove it and try again.");
-      if (p.stock < q) short.push(`${p.name} (${p.sku}): only ${p.stock} in stock`);
+      const p = byId.get(id)!;
+      if (p.stock < q) short.push(`${p.name} (${p.sku}): only ${p.stock} in stock — mark it “Bought outside” if you fetched it from a showroom`);
     }
     if (short.length) throw new BillError(`Not enough stock — ${short.join("; ")}.`);
 
     const lines = items.map((it) => {
       const p = byId.get(it.productId)!;
-      return { it, p, calcIn: { qty: it.qty, rate: it.rate, discountPct: it.discountPct, gstRate: p.gst_rate, cost: p.cost_price } };
+      const unitCost = it.source === "outside" ? (it.outsideCost ?? p.showroom_cost ?? p.cost_price) : p.cost_price;
+      return { it, p, calcIn: { qty: it.qty, rate: it.rate, discountPct: it.discountPct, gstRate: p.gst_rate, cost: unitCost } };
     });
     const bill = calcBill(lines.map((l) => l.calcIn), data.interstate);
 
@@ -104,16 +114,16 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
 
     const [inv] = await tx<{ id: number }[]>`
       insert into invoices (invoice_no, fy, seq, customer_id, customer_name, customer_phone, customer_gstin, is_interstate,
-        subtotal, discount, taxable, cgst, sgst, igst, round_off, total, cost_total, amount_paid, payment_mode, status, notes, user_id)
+        subtotal, discount, taxable, cgst, sgst, igst, round_off, total, cost_total, amount_paid, payment_mode, status, notes, user_id, price_type)
       values (${invoiceNo}, ${fy}, ${seq}, ${customerId}, ${customerName}, ${data.customer.phone}, ${data.customer.gstin}, ${data.interstate},
         ${bill.subtotal}, ${bill.discount}, ${bill.taxable}, ${bill.cgst}, ${bill.sgst}, ${bill.igst}, ${bill.roundOff}, ${bill.total},
-        ${bill.cost}, ${paid}, ${data.paymentMode}, ${status}, ${data.notes}, ${userId})
+        ${bill.cost}, ${paid}, ${data.paymentMode}, ${status}, ${data.notes}, ${userId}, ${data.priceType})
       returning id`;
 
     await tx`insert into invoice_items ${tx(lines.map((l, i) => ({
       invoice_id: inv.id, product_id: l.p.id, sku: l.p.sku, name: l.p.name, hsn: l.p.hsn, brand: l.p.brand, unit: l.p.unit,
       qty: l.it.qty, rate: l.it.rate, discount_pct: l.it.discountPct, taxable: bill.lines[i].taxable, gst_rate: l.p.gst_rate,
-      tax: bill.lines[i].tax, total: bill.lines[i].total, cost: bill.lines[i].cost,
+      tax: bill.lines[i].tax, total: bill.lines[i].total, cost: bill.lines[i].cost, source: l.it.source,
     })))}`;
 
     await applyStock(tx, [...need].map(([id, q]) => ({ id, change: -q })), "sale", inv.id, userId);
@@ -164,7 +174,8 @@ export async function cancelInvoice(invoiceId: number, reason: string, userId: n
     if (!inv) throw new BillError("Invoice not found.");
     if (inv.status === "cancelled") return;
     const items = await tx<{ product_id: number; qty: number }[]>`
-      select product_id, sum(qty)::int as qty from invoice_items where invoice_id = ${invoiceId} group by product_id order by product_id`;
+      select product_id, sum(qty)::int as qty from invoice_items
+      where invoice_id = ${invoiceId} and source = 'stock' group by product_id order by product_id`;
     await tx`select id from products where id = any(${items.map((i) => i.product_id)}::bigint[]) order by id for update`;
     await applyStock(tx, items.map((i) => ({ id: i.product_id, change: i.qty })), "cancel", invoiceId, userId, `Cancelled ${inv.invoice_no}`);
     await tx`update invoices set status = 'cancelled', notes = trim(notes || ' ' || ${"Cancelled: " + reason}) where id = ${invoiceId}`;

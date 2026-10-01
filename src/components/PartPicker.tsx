@@ -9,7 +9,7 @@ import { rupees2 } from "@/lib/format";
 
 export type PickedPart = {
   id: number; sku: string; name: string; brand: string | null; unit: string; hsn: string;
-  sale_price: number; cost_price: number; gst_rate: number; stock: number; reorder_level: number;
+  sale_price: number; retail_price: number | null; cost_price: number; showroom_cost: number | null; gst_rate: number; stock: number; reorder_level: number;
   rack: string; fits: string[]; fits_count: number; is_universal: boolean;
 };
 
@@ -19,7 +19,7 @@ export type PartPickerHandle = { focus: () => void };
  * Search box + "customer's bike" filter + keyboard-navigable results.
  * ↑/↓ to move, Enter to pick, Esc to clear.
  */
-export const PartPicker = forwardRef<PartPickerHandle, { onPick: (p: PickedPart) => void; allowOutOfStock?: boolean; priceField?: "sale_price" | "cost_price" }>(
+export const PartPicker = forwardRef<PartPickerHandle, { onPick: (p: PickedPart) => void; allowOutOfStock?: boolean; priceField?: "sale_price" | "retail_price" | "cost_price" }>(
   function PartPicker({ onPick, allowOutOfStock, priceField = "sale_price" }, ref) {
     const catalog = useCatalog();
     const [q, setQ] = useState("");
@@ -165,7 +165,7 @@ export const PartPicker = forwardRef<PartPickerHandle, { onPick: (p: PickedPart)
                     ) : null}
                   </div>
                   <div className="hidden sm:block"><StockBadge stock={p.stock} reorder={p.reorder_level} /></div>
-                  <p className="num text-right text-[15px] font-semibold">{rupees2(p[priceField])}<span className="block text-[11px] font-normal text-ink-3">+{p.gst_rate}% GST</span></p>
+                  <p className="num text-right text-[15px] font-semibold">{rupees2(p[priceField] ?? p.sale_price)}<span className="block text-[11px] font-normal text-ink-3">+{p.gst_rate}% GST</span></p>
                   <span className={cx("hidden h-8 w-8 place-items-center rounded-lg sm:grid", i === active ? "bg-primary text-primary-ink" : "bg-surface-2 text-ink-3")}>
                     <Plus className="h-4 w-4" />
                   </span>

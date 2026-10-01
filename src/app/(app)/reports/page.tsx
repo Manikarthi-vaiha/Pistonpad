@@ -90,6 +90,69 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
         {!r.expenses.length ? <p className="px-5 pb-4 text-[13px] text-ink-3">No expenses recorded for these dates. <Link className="font-semibold text-primary hover:underline" href="/expenses">Add expenses</Link> to see your true profit.</p> : null}
       </Card>
 
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.4fr]">
+        <Card>
+          <CardHeader title="Wholesale vs showroom sales" sub="Which rate list the bills used (before GST)" />
+          {r.priceTypes.length ? (
+            <Table>
+              <thead><tr><th className={th}>Rate list</th><th className={`${th} text-right`}>Bills</th><th className={`${th} text-right`}>Sales</th><th className={`${th} text-right`}>Profit</th></tr></thead>
+              <tbody>
+                {r.priceTypes.map((t) => (
+                  <tr key={t.price_type}>
+                    <td className={td}>{t.price_type === "showroom" ? "Showroom rate (retail)" : "Wholesale rate"}</td>
+                    <td className={`${td} text-right`}>{count(t.bills)}</td>
+                    <td className={`${td} text-right font-semibold`}>{rupees(t.taxable)}</td>
+                    <td className={`${td} text-right text-good`}>{rupees(t.profit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : <p className="px-5 py-6 text-sm text-ink-3">No bills in this period.</p>}
+        </Card>
+        <Card>
+          <CardHeader
+            title="Bought outside, sold in the shop"
+            sub="Parts fetched from a showroom / outside market for a sale"
+            action={r.outside.lines ? <a href={`/api/reports/export?type=outside&from=${from}&to=${to}`} className={buttonClass("secondary", "sm")}><Download className="h-4 w-4" /> CSV</a> : null}
+          />
+          {r.outside.lines ? (
+            <>
+              <dl className="num grid grid-cols-2 gap-4 border-b border-line p-5 sm:grid-cols-4">
+                {[
+                  ["Times", count(r.outside.lines), `${count(r.outside.qty)} pcs`],
+                  ["Paid outside", rupees(r.outside.cost), ""],
+                  ["Sold for", rupees(r.outside.sales), "before GST"],
+                  ["Profit", rupees(r.outside.profit), r.outside.sales ? `${((r.outside.profit / r.outside.sales) * 100).toFixed(1)}% margin` : ""],
+                ].map(([k, v, sub], i) => (
+                  <div key={k}>
+                    <dt className="text-[12.5px] text-ink-2">{k}</dt>
+                    <dd className={cx("mt-1 text-lg font-bold", i === 3 && (r.outside.profit < 0 ? "text-bad" : "text-good"))}>{v}</dd>
+                    {sub ? <dd className="text-xs text-ink-3">{sub}</dd> : null}
+                  </div>
+                ))}
+              </dl>
+              <Table>
+                <thead><tr><th className={th}>Part</th><th className={`${th} text-right`}>Times</th><th className={`${th} text-right`}>Paid</th><th className={`${th} text-right`}>Sold for</th><th className={`${th} text-right`}>Profit</th></tr></thead>
+                <tbody>
+                  {r.outsideParts.map((p) => (
+                    <tr key={p.product_id} className="hover:bg-surface-2">
+                      <td className={td}><Link href={`/products/${p.product_id}`} className="font-medium hover:underline">{p.name}</Link><p className="font-mono text-xs text-ink-3">{p.sku} · {count(p.qty)} pcs</p></td>
+                      <td className={`${td} text-right`}>{p.times}</td>
+                      <td className={`${td} text-right text-ink-2`}>{rupees(p.cost)}</td>
+                      <td className={`${td} text-right`}>{rupees(p.sales)}</td>
+                      <td className={cx(td, "text-right font-semibold", p.profit < 0 ? "text-bad" : "text-good")}>{rupees(p.profit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {r.outsideParts.length >= 5 ? <p className="px-5 py-3 text-[13px] text-ink-3">Parts you fetch often are worth stocking — buying them from your supplier is usually cheaper.</p> : null}
+            </>
+          ) : (
+            <p className="px-5 py-6 text-sm text-ink-3">No outside purchases in this period. When billing, mark a line <b>Bought outside</b> if you fetched the part from a showroom.</p>
+          )}
+        </Card>
+      </div>
+
       {s.bills ? (
         <>
           <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">

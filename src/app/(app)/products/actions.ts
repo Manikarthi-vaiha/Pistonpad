@@ -17,6 +17,8 @@ const productSchema = z.object({
   unit: z.string().trim().max(10).default("pcs"),
   costPrice: z.coerce.number().min(0),
   salePrice: z.coerce.number().min(0),
+  showroomCost: z.coerce.number().min(0).nullable(),
+  retailPrice: z.coerce.number().min(0).nullable(),
   mrp: z.coerce.number().min(0).nullable(),
   gstRate: z.coerce.number().refine((v) => [0, 5, 12, 18, 28].includes(v), "Choose a GST rate."),
   openingStock: z.coerce.number().int().min(0).default(0),
@@ -32,6 +34,7 @@ function parse(form: FormData) {
     sku: form.get("sku"), name: form.get("name"), brandId: form.get("brandId"),
     categoryId: num("categoryId"), hsn: form.get("hsn") || "8714", unit: form.get("unit") || "pcs",
     costPrice: num("costPrice") ?? 0, salePrice: num("salePrice") ?? 0, mrp: num("mrp"),
+    showroomCost: num("showroomCost"), retailPrice: num("retailPrice"),
     gstRate: form.get("gstRate"), openingStock: num("openingStock") ?? 0, reorderLevel: num("reorderLevel") ?? 0,
     rack: form.get("rack") || "", modelIds: form.getAll("modelIds"), active: form.get("active") !== "off",
   });
@@ -49,7 +52,7 @@ export async function saveProduct(id: number | null, _: FormState, form: FormDat
     const newId = await sql.begin(async (tx) => {
       const values = {
         sku: d.sku, name: d.name, brand_id: d.brandId, category_id: d.categoryId, hsn: d.hsn, unit: d.unit,
-        sale_price: d.salePrice, mrp: d.mrp, gst_rate: d.gstRate, reorder_level: d.reorderLevel, rack: d.rack, active: d.active,
+        sale_price: d.salePrice, retail_price: d.retailPrice, showroom_cost: d.showroomCost, mrp: d.mrp, gst_rate: d.gstRate, reorder_level: d.reorderLevel, rack: d.rack, active: d.active,
         ...(user.role === "owner" ? { cost_price: d.costPrice } : {}),
       };
       let pid = id;
