@@ -189,6 +189,14 @@ async function sales(days: number) {
             ${r2(lines.reduce((s, l) => s + l.cost, 0))}, ${paid}, ${mode},
             ${paid >= total ? "paid" : "due"}, true)
           returning id`;
+        if (paid > 0) {
+          // Credit bills are collected some days later, by cash, UPI or bank transfer.
+          const later = mode === "Credit";
+          const paidOn = later ? new Date(Math.min(date.getTime() + (5 + Math.floor(rnd() * 25)) * 86_400_000, today.getTime())) : date;
+          await tx`insert into payments (invoice_id, customer_id, amount, mode, paid_on, created_at, note)
+                   values (${inv.id}, ${cust?.id ?? null}, ${paid}, ${later ? ["Cash", "UPI", "Bank"][Math.floor(rnd() * 3)] : mode},
+                           ${paidOn}, ${later ? paidOn : new Date(date.getTime() + 12 * 3600_000)}, ${later ? "Credit collected" : ""})`;
+        }
         await tx`insert into invoice_items ${tx(lines.map((l) => ({
           invoice_id: inv.id, product_id: l.p.id, sku: l.p.sku, name: l.p.name, hsn: l.p.hsn, brand: l.p.brand,
           unit: l.p.unit, qty: l.qty, rate: l.p.sale_price, taxable: l.taxable, gst_rate: l.p.gst_rate,

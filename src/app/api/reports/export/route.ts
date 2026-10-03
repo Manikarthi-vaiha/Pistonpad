@@ -18,7 +18,15 @@ export async function GET(req: NextRequest) {
 
   let header: string[];
   let query;
-  if (type === "outside") {
+  if (type === "payments") {
+    header = ["Date", "Invoice no", "Customer", "Payment method", "Amount", "Type", "Note", "Received by"];
+    query = sql`select to_char(p.paid_on, 'YYYY-MM-DD'), i.invoice_no, i.customer_name, p.mode, p.amount,
+                  case when p.created_at <= i.created_at + interval '2 minutes' then 'At billing' else 'Credit collected' end,
+                  p.note, coalesce(u.name, '')
+                from payments p join invoices i on i.id = p.invoice_id left join users u on u.id = p.user_id
+                where p.paid_on between ${from} and ${to} and i.status <> 'cancelled'
+                order by p.paid_on, p.id`;
+  } else if (type === "outside") {
     header = ["Invoice no", "Date", "Customer", "Part no", "Part", "Brand", "Qty", "Paid outside (total)", "Sold for (before GST)", "Profit", "Rate list"];
     query = sql`select i.invoice_no, to_char(i.invoice_date, 'YYYY-MM-DD'), i.customer_name, it.sku, it.name, it.brand, it.qty,
                   it.cost, it.taxable, it.taxable - it.cost, i.price_type

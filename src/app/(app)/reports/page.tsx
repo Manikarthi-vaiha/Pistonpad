@@ -43,6 +43,7 @@ export default async function ReportsPage({ searchParams }: PageProps<"/reports"
       <PageHeader title="Sales report" sub={`${dateLabel(from)} – ${dateLabel(to)}`}
         actions={
           <>
+            <Link href={`/collections?from=${from}&to=${to}`} className={buttonClass("primary")}>Money received</Link>
             <a href={`/api/reports/export?type=invoices&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> Invoices CSV</a>
             <a href={`/api/reports/export?type=items&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> Item-wise CSV</a>
             <a href={`/api/reports/export?type=hsn&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> HSN summary (GSTR-1)</a>

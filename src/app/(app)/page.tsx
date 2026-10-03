@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { count, dateLabel, isoDate, rupees, rupeesShort, timeLabel } from "@/lib/format";
 import { estimatedProductCount } from "@/lib/products";
+import { collectionsReport } from "@/lib/reports";
 
 export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
@@ -16,7 +17,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const monthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
   const from30 = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
 
-  const [[kpi], series, recent, low, [lowCount], top, parts] = await Promise.all([
+  const [[kpi], series, recent, low, [lowCount], top, parts, collected] = await Promise.all([
     sql<{ today: number; today_n: number; month: number; month_n: number; month_profit: number; dues: number; due_n: number; month_expenses: number }[]>`
       select
         coalesce(sum(total) filter (where invoice_date = ${today}), 0) as today,
@@ -46,7 +47,10 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       where i.invoice_date >= ${monthStart} and i.status <> 'cancelled'
       group by it.product_id order by amount desc limit 6`,
     estimatedProductCount(),
+    collectionsReport(today, today),
   ]);
+  const todayMethods = collected.methods.filter((m) => m.received || m.expenses || m.mode === "Cash" || m.mode === "UPI");
+  const cashNet = collected.methods.find((m) => m.mode === "Cash")?.net ?? 0;
 
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
   const monthName = now.toLocaleDateString("en-IN", { month: "long" });
@@ -72,6 +76,26 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         <Kpi icon={Wallet} label="Credit to collect" value={rupeesShort(kpi.dues)} sub={`${kpi.due_n} unpaid bill${kpi.due_n === 1 ? "" : "s"}`} href="/invoices?status=unpaid" tone={kpi.dues > 0 ? "warn" : undefined} />
         <Kpi icon={Boxes} label="Parts in catalogue" value={count(parts)} sub={`${lowCount.n > 10000 ? "10,000+" : count(lowCount.n)} need reordering`} href="/products?stock=low" tone={lowCount.n > 0 ? "warn" : undefined} />
       </div>
+
+      <Card className="mt-4">
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-4 px-5 py-4">
+          <div>
+            <p className="text-[13px] font-medium text-ink-2">Received today</p>
+            <p className="num text-2xl font-bold tracking-tight">{rupees(collected.total)}</p>
+          </div>
+          {todayMethods.map((m) => (
+            <div key={m.mode} className="min-w-[90px]">
+              <p className="text-[12.5px] text-ink-3">{m.mode}</p>
+              <p className="num text-lg font-semibold">{rupees(m.received)}</p>
+            </div>
+          ))}
+          <div className="ml-auto rounded-lg bg-surface-2 px-4 py-2.5">
+            <p className="text-[12.5px] text-ink-3">Cash in hand today <span className="text-ink-3">(cash received − cash expenses)</span></p>
+            <p className={`num text-lg font-bold ${cashNet < 0 ? "text-bad" : ""}`}>{rupees(cashNet)}</p>
+          </div>
+          {owner ? <Link href="/collections" className="flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Details <ArrowRight className="h-4 w-4" /></Link> : null}
+        </div>
+      </Card>
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Card>

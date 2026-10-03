@@ -60,3 +60,53 @@ export async function salesReport(from: string, to: string) {
   const grossProfit = summary.taxable - summary.cost;
   return { summary, daily, modes, gst, b2b, topParts, brands, categories, expenses, priceTypes, outside, outsideParts, expenseTotal, grossProfit, netProfit: grossProfit - expenseTotal };
 }
+
+export const PAYMENT_METHODS = ["Cash", "UPI", "Card", "Bank", "Cheque"] as const;
+
+/**
+ * Money actually received in a period, by payment method — from the payments ledger, so credit
+ * collected later counts on the day it was collected. Payments on cancelled bills are left out
+ * (the money is treated as returned). Expenses paid by each method are shown alongside.
+ */
+export async function collectionsReport(from: string, to: string) {
+  const live = sql`p.paid_on between ${from} and ${to} and i.status <> 'cancelled'`;
+  const [byMode, daily, expensesByMode] = await Promise.all([
+    sql<{ mode: string; total: number; n: number; at_billing: number; collected_later: number }[]>`
+      select p.mode, sum(p.amount) as total, count(*)::int as n,
+             coalesce(sum(p.amount) filter (where p.created_at <= i.created_at + interval '2 minutes'), 0) as at_billing,
+             coalesce(sum(p.amount) filter (where p.created_at > i.created_at + interval '2 minutes'), 0) as collected_later
+      from payments p join invoices i on i.id = p.invoice_id
+      where ${live} group by 1`,
+    sql<{ date: string; mode: string; total: number }[]>`
+      select to_char(p.paid_on, 'YYYY-MM-DD') as date, p.mode, sum(p.amount) as total
+      from payments p join invoices i on i.id = p.invoice_id
+      where ${live} group by 1, 2 order by 1 desc`,
+    sql<{ mode: string; total: number }[]>`
+      select payment_mode as mode, sum(amount) as total from expenses
+      where expense_date between ${from} and ${to} group by 1`,
+  ]);
+
+  const known = new Set<string>(PAYMENT_METHODS);
+  const modes = [...PAYMENT_METHODS, ...new Set([...byMode, ...expensesByMode].map((r) => r.mode).filter((m) => !known.has(m)))];
+  const methods = modes.map((mode) => {
+    const r = byMode.find((x) => x.mode === mode);
+    const out = expensesByMode.find((x) => x.mode === mode)?.total ?? 0;
+    const received = r?.total ?? 0;
+    return { mode, received, payments: r?.n ?? 0, atBilling: r?.at_billing ?? 0, collectedLater: r?.collected_later ?? 0, expenses: out, net: received - out };
+  });
+
+  const days = new Map<string, Record<string, number>>();
+  for (const d of daily) {
+    const row = days.get(d.date) ?? {};
+    row[d.mode] = (row[d.mode] ?? 0) + d.total;
+    days.set(d.date, row);
+  }
+  const total = methods.reduce((s, m) => s + m.received, 0);
+  return {
+    methods,
+    total,
+    collectedLater: methods.reduce((s, m) => s + m.collectedLater, 0),
+    expenses: methods.reduce((s, m) => s + m.expenses, 0),
+    daily: [...days].map(([date, byMode]) => ({ date, byMode, total: Object.values(byMode).reduce((a, b) => a + b, 0) })),
+  };
+}
