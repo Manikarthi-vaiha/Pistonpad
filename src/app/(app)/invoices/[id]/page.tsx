@@ -6,6 +6,7 @@ import { InvoiceStatus, Notice } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { dateLabel, GST_STATES, rupees, rupees2, timeLabel } from "@/lib/format";
+import { invoicePdfPath } from "@/lib/pdf/link";
 import { getShop } from "@/lib/shop";
 import { rupeesInWords } from "@/lib/words";
 import { InvoiceActions } from "./InvoiceActions";
@@ -35,10 +36,10 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
     h.taxable += it.taxable; h.tax += it.tax;
     hsn.set(k, h);
   }
+  // WhatsApp message; the PDF link is appended in the browser (it needs the site's address).
   const shareText = [
-    `${shop.shop_name}`, `Invoice ${inv.invoice_no} · ${dateLabel(inv.invoice_date)}`, "",
-    ...items.map((it) => `${it.name} × ${it.qty} = ${rupees2(it.total)}`), "",
-    `Total: ${rupees2(inv.total)}`, due > 0 ? `Balance due: ${rupees2(due)}` : "Paid in full. Thank you!",
+    `*${shop.shop_name}*`, `Invoice ${inv.invoice_no} · ${dateLabel(inv.invoice_date)}`,
+    `Total: ${rupees2(inv.total)}`, due > 0 && inv.status !== "cancelled" ? `Balance due: ${rupees2(due)}` : "Paid in full. Thank you!",
   ].join("\n");
 
   return (
@@ -47,7 +48,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
         <Link href="/invoices" className="flex items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink"><ArrowLeft className="h-4 w-4" /> Invoices</Link>
         <InvoiceActions
           invoiceId={inv.id} status={inv.status} due={due} isOwner={user.role === "owner"}
-          phone={inv.customer_phone} shareText={shareText}
+          phone={inv.customer_phone} shareText={shareText} pdfPath={invoicePdfPath(inv.id)}
         />
       </div>
       {isNew ? (

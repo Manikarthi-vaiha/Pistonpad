@@ -2,13 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, IndianRupee, MessageCircle, Printer, ReceiptIndianRupee } from "lucide-react";
+import { Ban, FileDown, IndianRupee, Loader2, MessageCircle, Printer, ReceiptIndianRupee, Share2 } from "lucide-react";
 import { Button, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { rupees } from "@/lib/format";
 import { addPayment, voidInvoice } from "../actions";
 
-export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareText }: {
-  invoiceId: number; status: string; due: number; isOwner: boolean; phone: string; shareText: string;
+export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareText, pdfPath }: {
+  invoiceId: number; status: string; due: number; isOwner: boolean; phone: string; shareText: string; pdfPath: string;
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<"" | "pay" | "cancel">("");
@@ -18,7 +18,37 @@ export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareTe
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
 
-  const wa = `https://wa.me/${phone.replace(/\D/g, "").length === 10 ? "91" + phone.replace(/\D/g, "") : phone.replace(/\D/g, "")}?text=${encodeURIComponent(shareText)}`;
+  const [sharing, setSharing] = useState(false);
+
+  // WhatsApp chat with the customer (or a contact picker if there's no phone), with a link to the PDF.
+  const digits = phone.replace(/\D/g, "");
+  const waNumber = digits.length === 10 ? "91" + digits : digits;
+  const pdfUrl = () => `${window.location.origin}${pdfPath}`;
+  const openWhatsApp = () => {
+    const text = `${shareText}\n\nView or download your invoice (PDF):\n${pdfUrl()}`;
+    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
+  };
+
+  // On phones, share the PDF file itself (WhatsApp, email…); elsewhere fall back to the link.
+  const sharePdf = async () => {
+    setError("");
+    setSharing(true);
+    try {
+      const res = await fetch(pdfPath);
+      if (!res.ok) throw new Error("pdf");
+      const name = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "invoice.pdf";
+      const file = new File([await res.blob()], name, { type: "application/pdf" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: name, text: shareText.replace(/\*/g, "") });
+      } else {
+        openWhatsApp();
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setError("Couldn't prepare the PDF. Check the connection and try again.");
+    } finally {
+      setSharing(false);
+    }
+  };
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) =>
     start(async () => {
@@ -36,7 +66,15 @@ export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareTe
           </Button>
         ) : null}
         <Button onClick={() => window.print()}><Printer className="h-4 w-4" /> Print</Button>
-        {phone ? <a className="inline-flex h-10 items-center gap-2 rounded-lg border border-line-2 bg-surface px-4 text-sm font-semibold hover:bg-surface-2" href={wa} target="_blank" rel="noreferrer"><MessageCircle className="h-4 w-4" /> WhatsApp</a> : null}
+        <Button onClick={sharePdf} disabled={sharing} title="Send the PDF to WhatsApp or any app (phones)">
+          {sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />} Share PDF
+        </Button>
+        <Button onClick={openWhatsApp} title={phone ? `Open WhatsApp chat with ${phone}` : "Choose a WhatsApp contact"}>
+          <MessageCircle className="h-4 w-4" /> WhatsApp
+        </Button>
+        <a href={`${pdfPath}?download=1`} className="inline-flex h-10 items-center gap-2 rounded-lg border border-line-2 bg-surface px-4 text-sm font-semibold hover:bg-surface-2">
+          <FileDown className="h-4 w-4" /> PDF
+        </a>
         {isOwner && status !== "cancelled" ? <Button variant="danger" onClick={() => setPanel(panel === "cancel" ? "" : "cancel")}><Ban className="h-4 w-4" /> Cancel</Button> : null}
         <LinkButton href="/billing" variant="secondary"><ReceiptIndianRupee className="h-4 w-4" /> Next bill</LinkButton>
       </div>
