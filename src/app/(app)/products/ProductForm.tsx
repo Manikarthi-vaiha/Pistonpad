@@ -2,7 +2,8 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import Link from "next/link";
+import { Check, Sparkles } from "lucide-react";
 import { Button, Card, CardHeader, cx, Field, Input, Notice, Select } from "@/components/ui";
 import type { Catalog } from "@/lib/products";
 import { saveProduct, type FormState } from "./actions";
@@ -20,6 +21,32 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
   const isNew = !initial?.id;
   const [state, action, pending] = useActionState<FormState, FormData>(saveProduct.bind(null, initial?.id ?? null), {});
   const [brandId, setBrandId] = useState(initial?.brand_id ? String(initial.brand_id) : "");
+  const [categoryId, setCategoryId] = useState(initial?.category_id ? String(initial.category_id) : "");
+  const [sku, setSku] = useState(initial?.sku ?? "");
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [dup, setDup] = useState<{ id: number; name: string } | null>(null);
+
+  // Suggest the next free part number for the chosen brand + category (new parts only).
+  useEffect(() => {
+    if (!isNew || !brandId) return;
+    const ctrl = new AbortController();
+    fetch(`/api/products/sku?brand=${brandId}&category=${categoryId}`, { signal: ctrl.signal })
+      .then((r) => r.json()).then((d) => setSuggestion(d.suggestion ?? null)).catch(() => {});
+    return () => ctrl.abort();
+  }, [isNew, brandId, categoryId]);
+
+  // Warn while typing if the part number is already used by another part.
+  useEffect(() => {
+    const v = sku.trim();
+    if (!v || v.toLowerCase() === (initial?.sku ?? "").toLowerCase()) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/products/sku?check=${encodeURIComponent(v)}`, { signal: ctrl.signal })
+        .then((r) => r.json()).then((d) => setDup(d.exists ? { id: d.id, name: d.name } : null)).catch(() => {});
+    }, 300);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [sku, initial?.sku]);
+  const dupShown = sku.trim() && sku.trim().toLowerCase() !== (initial?.sku ?? "").toLowerCase() ? dup : null;
   const [picked, setPicked] = useState<Set<number>>(new Set(initial?.model_ids ?? []));
   const [filter, setFilter] = useState("");
   const [cost, setCost] = useState(String(initial?.cost_price ?? ""));
@@ -46,7 +73,19 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
       <Card>
         <CardHeader title="Part details" />
         <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Part number"><Input name="sku" defaultValue={initial?.sku} required className="font-mono" autoFocus={isNew} /></Field>
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <label htmlFor="sku" className="text-[13px] font-medium text-ink-2">Part number</label>
+            <Input id="sku" name="sku" value={sku} onChange={(e) => setSku(e.target.value)} required autoFocus={isNew}
+              placeholder={suggestion ?? "e.g. HE-BRK-0001"} className={cx("font-mono", dupShown && "border-bad")} />
+            {dupShown ? (
+              <span className="text-xs text-bad">Already used by <Link href={`/products/${dupShown.id}`} className="font-semibold underline">{dupShown.name}</Link></span>
+            ) : isNew && suggestion && sku !== suggestion ? (
+              <button type="button" onClick={() => setSku(suggestion)}
+                className="inline-flex items-center gap-1.5 self-start rounded-md bg-primary-soft px-2 py-1 text-xs font-semibold text-primary hover:brightness-95">
+                <Sparkles className="h-3.5 w-3.5" /> Use <span className="font-mono">{suggestion}</span>
+              </button>
+            ) : <span className="text-xs text-ink-3">{isNew ? "Choose the brand to get a suggestion" : "Must be unique"}</span>}
+          </div>
           <Field label="Part name" className="sm:col-span-2 lg:col-span-3"><Input name="name" defaultValue={initial?.name} required placeholder="e.g. Clutch plate set – Bajaj Pulsar 150" /></Field>
           <Field label="Bike brand">
             <Select name="brandId" value={brandId} onChange={(e) => { setBrandId(e.target.value); setFilter(""); }} required>
@@ -55,7 +94,7 @@ export function ProductForm({ catalog, initial, isOwner }: { catalog: Catalog; i
             </Select>
           </Field>
           <Field label="Category">
-            <Select name="categoryId" defaultValue={initial?.category_id ?? ""}>
+            <Select name="categoryId" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
               <option value="">—</option>
               {catalog.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </Select>

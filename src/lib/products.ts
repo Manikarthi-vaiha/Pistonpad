@@ -129,3 +129,43 @@ export async function getCatalog() {
   return { brands, models, categories };
 }
 export type Catalog = Awaited<ReturnType<typeof getCatalog>>;
+
+/* ---------- Part number suggestions ---------- */
+
+const CATEGORY_CODES: Record<string, string> = {
+  engine: "ENG", brakes: "BRK", clutch: "CLU", transmission: "TRN", electricals: "ELE", lights: "LGT",
+  suspension: "SUS", cables: "CBL", "body parts": "BDY", filters: "FLT", "tyres & tubes": "TYR",
+  bearings: "BRG", fasteners: "FST", wheels: "WHL", "fuel system": "FUE",
+};
+
+/** Brand code: initials for multi-word names (Royal Enfield → RE), else first two letters (Hero → HE). */
+export function brandCode(name: string) {
+  const words = name.toUpperCase().replace(/[^A-Z0-9 ]/g, "").split(/\s+/).filter(Boolean);
+  if (!words.length) return "PT";
+  return words.length > 1 ? words.map((w) => w[0]).join("").slice(0, 3) : words[0].slice(0, 2);
+}
+
+export function categoryCode(name: string | null | undefined) {
+  if (!name) return "GEN";
+  return CATEGORY_CODES[name.toLowerCase()] ?? (name.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3) || "GEN");
+}
+
+/** Next free part number like HE-BRK-0004 for a brand + category. Uses the sku prefix index. */
+export async function suggestSku(brandId: number, categoryId: number | null) {
+  const [[b], [c]] = await Promise.all([
+    sql<{ name: string }[]>`select name::text as name from brands where id = ${brandId}`,
+    categoryId ? sql<{ name: string }[]>`select name::text as name from categories where id = ${categoryId}` : Promise.resolve([undefined]),
+  ]);
+  if (!b) return null;
+  const prefix = `${brandCode(b.name)}-${categoryCode(c?.name)}-`;
+  const like = prefix.toLowerCase().replace(/[\\%_]/g, "\\$&") + "%";
+  const [{ n }] = await sql<{ n: number | null }[]>`
+    select max(substring(sku from ${prefix.length + 1}::int)::int) as n
+    from products where lower(sku) like ${like} and substring(sku from ${prefix.length + 1}::int) ~ '^[0-9]{1,9}$'`;
+  return `${prefix}${String((n ?? 0) + 1).padStart(4, "0")}`;
+}
+
+export async function findBySku(sku: string) {
+  const [p] = await sql<{ id: number; name: string }[]>`select id, name from products where lower(sku) = ${sku.trim().toLowerCase()} limit 1`;
+  return p ?? null;
+}
