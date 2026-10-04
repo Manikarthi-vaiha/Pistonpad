@@ -21,11 +21,11 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
     searchProducts({
       q: one("q"), brandId: int("brand"), modelId: int("model"), categoryId: int("category"),
       stock: stock === "low" || stock === "out" || stock === "in" ? stock : undefined,
-      includeInactive: one("inactive") === "1", after: int("after"), limit: 50,
+      includeInactive: one("show") === "all" || one("inactive") === "1", onlyInactive: one("show") === "disabled", after: int("after"), limit: 50,
     }),
     estimatedProductCount(),
   ]);
-  const filtered = ["q", "brand", "model", "category", "stock"].some((k) => one(k));
+  const filtered = ["q", "brand", "model", "category", "stock", "show"].some((k) => one(k));
   const next = new URLSearchParams(Object.entries(sp).filter(([k, v]) => k !== "after" && typeof v === "string") as [string, string][]);
 
   return (
@@ -52,7 +52,7 @@ export default async function ProductsPage({ searchParams }: PageProps<"/product
                   <td className={td}><Link href={`/products/${p.id}`} className="font-mono text-[13px] font-semibold text-primary hover:underline">{p.sku}</Link></td>
                   <td className={td}>
                     <Link href={`/products/${p.id}`} className="block max-w-[360px] truncate font-medium hover:underline">{p.name}</Link>
-                    <p className="text-xs text-ink-3">{[p.brand, p.category].filter(Boolean).join(" · ")}{!p.active ? " · Disabled" : ""}</p>
+                    <p className="text-xs text-ink-3">{[p.brand, p.category].filter(Boolean).join(" · ")}{!p.active ? <Badge tone="bad" className="ml-2">Disabled</Badge> : null}</p>
                   </td>
                   <td className={`${td} max-w-[240px]`}>
                     {p.is_universal ? <Badge tone="info">All bikes</Badge> : p.fits.length ? (

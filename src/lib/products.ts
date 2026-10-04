@@ -32,6 +32,7 @@ export type ProductFilter = {
   categoryId?: number;
   stock?: "low" | "out" | "in";
   includeInactive?: boolean;
+  onlyInactive?: boolean; // disabled parts only
   after?: number; // keyset cursor: last id of previous page
   limit?: number;
 };
@@ -50,7 +51,8 @@ export async function searchProducts(f: ProductFilter) {
 
   const conds = [sql`true`];
   for (const w of words) conds.push(sql`p.search like ${"%" + escapeLike(w) + "%"}`);
-  if (!f.includeInactive) conds.push(sql`p.active`);
+  if (f.onlyInactive) conds.push(sql`not p.active`);
+  else if (!f.includeInactive) conds.push(sql`p.active`);
   if (f.brandId) conds.push(sql`p.brand_id = ${f.brandId}`);
   if (f.categoryId) conds.push(sql`p.category_id = ${f.categoryId}`);
   if (f.modelId)

@@ -29,10 +29,10 @@ export function ProductFilters({ catalog }: { catalog: Catalog }) {
 
   const brand = sp.get("brand") ?? "";
   const models = useMemo(() => catalog.models.filter((m) => String(m.brand_id) === brand), [catalog, brand]);
-  const any = ["q", "brand", "model", "category", "stock"].some((k) => sp.get(k));
+  const any = ["q", "brand", "model", "category", "stock", "show"].some((k) => sp.get(k));
 
   return (
-    <div className="grid grid-cols-1 gap-3 border-b border-line p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_150px_200px_170px_160px_auto]">
+    <div className="grid grid-cols-1 gap-3 border-b border-line p-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.6fr)_140px_180px_160px_140px_150px_auto]">
       <div className="relative">
         <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-3" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Part no. or name — e.g. “piston kit splendor”" className="pr-9 pl-9" aria-label="Search parts" />
@@ -49,6 +49,11 @@ export function ProductFilters({ catalog }: { catalog: Catalog }) {
       <Select value={sp.get("category") ?? ""} onChange={(e) => set({ category: e.target.value })} aria-label="Category">
         <option value="">All categories</option>
         {catalog.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </Select>
+      <Select value={sp.get("show") ?? ""} onChange={(e) => set({ show: e.target.value })} aria-label="Show active or disabled parts">
+        <option value="">Active parts</option>
+        <option value="disabled">Disabled parts</option>
+        <option value="all">All parts</option>
       </Select>
       <Select value={sp.get("stock") ?? ""} onChange={(e) => set({ stock: e.target.value })} aria-label="Stock level">
         <option value="">Any stock</option>
