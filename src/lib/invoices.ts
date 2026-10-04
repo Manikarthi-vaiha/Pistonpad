@@ -5,7 +5,8 @@ import { sql } from "./db";
 import { calcBill, r2 } from "./billing-calc";
 import { financialYear, GSTIN_RE } from "./format";
 
-export const PAYMENT_MODES = ["Cash", "UPI", "Card", "Bank", "Credit"] as const;
+// New bills are paid in full; "Credit" is no longer offered (older credit bills keep their mode).
+export const PAYMENT_MODES = ["Cash", "UPI", "Card", "Bank"] as const;
 
 export const invoiceInput = z.object({
   customer: z.object({
@@ -45,7 +46,6 @@ export class BillError extends Error {}
 export async function createInvoice(input: InvoiceInput, userId: number) {
   const data = invoiceInput.parse(input);
   if (data.customer.gstin && !GSTIN_RE.test(data.customer.gstin)) throw new BillError("The customer GSTIN doesn't look right. It should be 15 characters, like 33ABCDE1234F1Z5.");
-  if (data.paymentMode === "Credit" && !data.customer.name && !data.customer.id) throw new BillError("Enter the customer's name for a credit bill.");
 
   const items = data.items;
   const ids = [...new Set(items.map((i) => i.productId))];
@@ -79,6 +79,7 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
       return { it, p, calcIn: { qty: it.qty, rate: it.rate, discountPct: it.discountPct, gstRate: p.gst_rate, cost: unitCost } };
     });
     const bill = calcBill(lines.map((l) => l.calcIn), data.interstate);
+    if (r2(data.amountPaid) < bill.total) throw new BillError(`Collect the full amount of ₹${bill.total} before saving — bills can't be left on credit.`);
 
     // Customer: existing id, or find/create by phone, or walk-in
     let customerId: number | null = data.customer.id ?? null;
@@ -87,7 +88,7 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
       const [c] = await tx<{ name: string }[]>`select name from customers where id = ${customerId}`;
       if (!c) throw new BillError("That customer no longer exists.");
       customerName = data.customer.name || c.name;
-    } else if (data.customer.phone || data.paymentMode === "Credit") {
+    } else if (data.customer.phone) {
       const phone = data.customer.phone.replace(/\s/g, "") || null;
       const [c] = phone
         ? await tx<{ id: number }[]>`
@@ -130,7 +131,7 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
 
     if (paid > 0) {
       await tx`insert into payments (invoice_id, customer_id, amount, mode, user_id)
-               values (${inv.id}, ${customerId}, ${paid}, ${data.paymentMode === "Credit" ? "Cash" : data.paymentMode}, ${userId})`;
+               values (${inv.id}, ${customerId}, ${paid}, ${data.paymentMode}, ${userId})`;
     }
     return { id: inv.id, invoiceNo, total: bill.total };
   });

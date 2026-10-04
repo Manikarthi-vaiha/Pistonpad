@@ -18,7 +18,7 @@ const rateFor = (p: PickedPart, t: PriceType) => (t === "showroom" ? (p.retail_p
 type Customer = { id?: number; name: string; phone: string; gstin: string; due?: number; limit?: number };
 type CustomerHit = { id: number; name: string; phone: string | null; gstin: string; state_code: string; due: number; credit_limit: number };
 
-const MODES = ["Cash", "UPI", "Card", "Bank", "Credit"] as const;
+const MODES = ["Cash", "UPI", "Card", "Bank"] as const;
 
 export function BillingClient({ shopState }: { shopState: string }) {
   const router = useRouter();
@@ -40,7 +40,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
     () => calcBill(lines.map((l) => ({ qty: l.qty, rate: l.rate, discountPct: l.discountPct, gstRate: l.part.gst_rate })), interstate),
     [lines, interstate],
   );
-  const paid = paidInput === null ? (mode === "Credit" ? 0 : bill.total) : Number(paidInput) || 0;
+  const paid = paidInput === null ? bill.total : Number(paidInput) || 0;
 
   useEffect(() => {
     picker.current?.focus();
@@ -85,7 +85,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
     if (overStock.length) return setError(`Not enough stock for ${overStock.map((l) => l.part.name).join(", ")}. Lower the quantity, add stock, or mark it “Bought outside”.`);
     if (outsideMissingCost.length) return setError(`Enter what you paid outside for ${outsideMissingCost.map((l) => l.part.name).join(", ")}.`);
     if (gstinBad) return setError("The GSTIN doesn't look right. It should be 15 characters, like 33ABCDE1234F1Z5.");
-    if (mode === "Credit" && !customer.name.trim() && !customer.id) return setError("Enter the customer's name for a credit bill.");
+    if (paid < bill.total) return setError(`Collect the full amount of ${rupees(bill.total)} before saving — bills can't be left on credit.`);
     start(async () => {
       const r = await saveBill({
         customer: { id: customer.id, name: customer.name.trim(), phone: customer.phone.trim(), gstin: customer.gstin.trim().toUpperCase() },
@@ -96,7 +96,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
         interstate,
         priceType,
         paymentMode: mode,
-        amountPaid: Math.min(paid, bill.total),
+        amountPaid: bill.total,
         notes,
       });
       if (r.ok) router.push(`/invoices/${r.data.id}?new=1`);
@@ -239,7 +239,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
 
             <div>
               <p className="mb-2 text-[13px] font-medium text-ink-2">Paid by</p>
-              <div className="grid grid-cols-5 gap-1 rounded-lg bg-surface-2 p-1">
+              <div className="grid grid-cols-4 gap-1 rounded-lg bg-surface-2 p-1">
                 {MODES.map((m) => (
                   <button key={m} onClick={() => { setMode(m); setPaidInput(null); }}
                     className={cx("rounded-md py-2 text-[13px] font-semibold transition-colors", mode === m ? "bg-surface text-ink shadow-sm ring-1 ring-line-2" : "text-ink-2 hover:text-ink")}>
@@ -249,12 +249,12 @@ export function BillingClient({ shopState }: { shopState: string }) {
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label={mode === "Credit" ? "Advance paid ₹" : "Amount received ₹"}>
+              <Field label="Amount received ₹">
                 <Input inputMode="decimal" value={paidInput ?? String(paid)} onChange={(e) => setPaidInput(e.target.value.replace(/[^\d.]/g, ""))} />
               </Field>
               <div className="flex flex-col justify-end pb-2 text-right text-sm">
                 {paid < bill.total ? (
-                  <span className="font-semibold text-warn">Due {rupees(bill.total - paid)}</span>
+                  <span className="font-semibold text-bad">Short by {rupees(bill.total - paid)}</span>
                 ) : paid > bill.total ? (
                   <span className="font-semibold text-good">Return {rupees2(paid - bill.total)}</span>
                 ) : <span className="text-ink-3">Fully paid</span>}
