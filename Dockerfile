@@ -16,6 +16,8 @@ COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
 COPY --from=builder --chown=app:app /app/db/migrations ./db/migrations
 COPY --from=builder --chown=app:app /app/scripts/migrate.mjs ./scripts/migrate.mjs
+# The migration script runs outside Next's bundle, so it needs its own copy of the driver.
+COPY --from=builder --chown=app:app /app/node_modules/postgres ./node_modules/postgres
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1

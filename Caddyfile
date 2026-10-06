@@ -1,0 +1,5 @@
+# Several names can be listed, comma separated: DOMAIN=example.in, www.example.in
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
