@@ -124,6 +124,11 @@ input, select, textarea { font: inherit; }
 }
 .rise-in { animation: rise-in 0.6s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: var(--d, 0ms); }
 
+/* Help in Tamil: a Tamil font first (Latin text still uses the app font) and roomier lines. */
+.help-ta { font-family: "Noto Sans Tamil Variable", var(--font-sans); }
+.help-ta .help-body { line-height: 1.85; }
+.help-ta [class*="tracking-"] { letter-spacing: 0; } /* spacing between letters breaks up Tamil words */
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
