@@ -1,0 +1,187 @@
+import type { Metadata } from "next";
+import { Fragment } from "react";
+import Link from "next/link";
+import { Download } from "lucide-react";
+import { AreaChart, BarList } from "@/components/charts";
+import { buttonClass, Card, CardHeader, cx, Empty, PageHeader, Table, td, th } from "@/components/ui";
+import { requireUser } from "@/lib/auth";
+import { count, dateLabel, rupees, rupees2 } from "@/lib/format";
+import { salesReport } from "@/lib/reports";
+import { reportRange } from "../range";
+import { ReportNav } from "../ReportNav";
+import { Tile } from "../Tile";
+
+export const metadata: Metadata = { title: "Spare parts report" };
+
+export default async function PartsReportPage({ searchParams }: PageProps<"/reports/parts">) {
+  await requireUser("owner");
+  const range = reportRange(await searchParams);
+  const { from, to } = range;
+  const r = await salesReport(from, to);
+  const s = r.summary;
+  const profit = r.grossProfit;
+  const net = r.netProfit;
+  const days = r.daily.length;
+
+  return (
+    <>
+      <PageHeader title="Spare parts report" sub={`${dateLabel(from)} – ${dateLabel(to)} · parts sales, profit and parts expenses`}
+        actions={
+          <>
+            <Link href={`/collections?from=${from}&to=${to}`} className={buttonClass("primary")}>Money received</Link>
+            <a href={`/api/reports/export?type=invoices&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> Invoices CSV</a>
+            <a href={`/api/reports/export?type=items&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> Item-wise CSV</a>
+            <a href={`/api/reports/export?type=hsn&from=${from}&to=${to}`} className={buttonClass("secondary")}><Download className="h-4 w-4" /> HSN summary (GSTR-1)</a>
+          </>
+        } />
+
+      <ReportNav active="/reports/parts" range={range} />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <Tile label="Net sales (incl. GST)" value={rupees(s.total)} sub={`${count(s.bills)} bills${s.cancelled ? ` · ${s.cancelled} cancelled` : ""}`} />
+        <Tile label="GST collected" value={rupees(s.cgst + s.sgst + s.igst)} sub={`CGST ${rupees(s.cgst)} · SGST ${rupees(s.sgst)}${s.igst ? ` · IGST ${rupees(s.igst)}` : ""}`} />
+        <Tile label="Gross profit" value={rupees(profit)} sub={`Margin ${s.taxable ? ((profit / s.taxable) * 100).toFixed(1) : "0"}% on ${rupees(s.taxable)} taxable`} tone="good" />
+        <Tile label="Parts expenses" value={rupees(r.expenseTotal)} sub={r.expenses.length ? `${r.expenses.length} categor${r.expenses.length === 1 ? "y" : "ies"} · largest ${r.expenses[0].label}` : "None recorded in this period"} tone={r.expenseTotal ? "warn" : undefined} href={`/expenses?from=${from}&to=${to}&business=parts`} />
+        <Tile label="Parts net profit" value={rupees(net)} sub={`Gross profit − parts expenses${s.taxable ? ` · ${((net / s.taxable) * 100).toFixed(1)}% of sales` : ""}. Shared costs are in Combined.`} tone={net >= 0 ? "good" : "bad"} strong />
+        <Tile label="Still to collect" value={rupees(s.total - s.paid)} sub={`${rupees(s.paid)} received`} tone={s.total - s.paid > 0 ? "warn" : undefined} />
+      </div>
+
+      <Card className="mt-4">
+        <CardHeader title="Spare parts profit and loss" sub="All amounts before GST (GST collected is owed to the government, not profit). Shared costs like rent are in the Combined report." />
+        <dl className="num grid grid-cols-[minmax(0,1fr)_auto] gap-x-6 gap-y-2 px-5 py-4 text-sm sm:max-w-xl">
+          <dt>Sales (taxable value)</dt><dd className="text-right">{rupees2(s.taxable)}</dd>
+          <dt className="text-ink-2">− Cost of parts sold</dt><dd className="text-right text-ink-2">{rupees2(s.cost)}</dd>
+          <dt className="border-t border-line pt-2 font-semibold">Gross profit</dt><dd className="border-t border-line pt-2 text-right font-semibold">{rupees2(profit)}</dd>
+          {r.expenses.map((e) => (
+            <Fragment key={e.label}><dt className="pl-3 text-ink-2">− {e.label}</dt><dd className="text-right text-ink-2">{rupees2(e.value)}</dd></Fragment>
+          ))}
+          {!r.expenses.length ? <><dt className="pl-3 text-ink-3">− Expenses</dt><dd className="text-right text-ink-3">{rupees2(0)}</dd></> : null}
+          <dt className={cx("border-t-2 border-ink pt-2 text-base font-bold", net < 0 && "text-bad")}>{net >= 0 ? "Net profit" : "Net loss"}</dt>
+          <dd className={cx("border-t-2 border-ink pt-2 text-right text-base font-bold", net < 0 ? "text-bad" : "text-good")}>{rupees2(net)}</dd>
+        </dl>
+        {!r.expenses.length ? <p className="px-5 pb-4 text-[13px] text-ink-3">No parts expenses recorded for these dates. <Link className="font-semibold text-primary hover:underline" href="/expenses">Add expenses</Link> to see your true profit.</p> : null}
+      </Card>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1fr_1.4fr]">
+        <Card>
+          <CardHeader title="Wholesale vs showroom sales" sub="Which rate list the bills used (before GST)" />
+          {r.priceTypes.length ? (
+            <Table>
+              <thead><tr><th className={th}>Rate list</th><th className={`${th} text-right`}>Bills</th><th className={`${th} text-right`}>Sales</th><th className={`${th} text-right`}>Profit</th></tr></thead>
+              <tbody>
+                {r.priceTypes.map((t) => (
+                  <tr key={t.price_type}>
+                    <td className={td}>{t.price_type === "showroom" ? "Showroom rate (retail)" : "Wholesale rate"}</td>
+                    <td className={`${td} text-right`}>{count(t.bills)}</td>
+                    <td className={`${td} text-right font-semibold`}>{rupees(t.taxable)}</td>
+                    <td className={`${td} text-right text-good`}>{rupees(t.profit)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          ) : <p className="px-5 py-6 text-sm text-ink-3">No bills in this period.</p>}
+        </Card>
+        <Card>
+          <CardHeader
+            title="Bought outside, sold in the shop"
+            sub="Parts fetched from a showroom / outside market for a sale"
+            action={r.outside.lines ? <a href={`/api/reports/export?type=outside&from=${from}&to=${to}`} className={buttonClass("secondary", "sm")}><Download className="h-4 w-4" /> CSV</a> : null}
+          />
+          {r.outside.lines ? (
+            <>
+              <dl className="num grid grid-cols-2 gap-4 border-b border-line p-5 sm:grid-cols-4">
+                {[
+                  ["Times", count(r.outside.lines), `${count(r.outside.qty)} pcs`],
+                  ["Paid outside", rupees(r.outside.cost), ""],
+                  ["Sold for", rupees(r.outside.sales), "before GST"],
+                  ["Profit", rupees(r.outside.profit), r.outside.sales ? `${((r.outside.profit / r.outside.sales) * 100).toFixed(1)}% margin` : ""],
+                ].map(([k, v, sub], i) => (
+                  <div key={k}>
+                    <dt className="text-[12.5px] text-ink-2">{k}</dt>
+                    <dd className={cx("mt-1 text-lg font-bold", i === 3 && (r.outside.profit < 0 ? "text-bad" : "text-good"))}>{v}</dd>
+                    {sub ? <dd className="text-xs text-ink-3">{sub}</dd> : null}
+                  </div>
+                ))}
+              </dl>
+              <Table>
+                <thead><tr><th className={th}>Part</th><th className={`${th} text-right`}>Times</th><th className={`${th} text-right`}>Paid</th><th className={`${th} text-right`}>Sold for</th><th className={`${th} text-right`}>Profit</th></tr></thead>
+                <tbody>
+                  {r.outsideParts.map((p) => (
+                    <tr key={p.product_id} className="hover:bg-surface-2">
+                      <td className={td}><Link href={`/products/${p.product_id}`} className="font-medium hover:underline">{p.name}</Link><p className="font-mono text-xs text-ink-3">{p.sku} · {count(p.qty)} pcs</p></td>
+                      <td className={`${td} text-right`}>{p.times}</td>
+                      <td className={`${td} text-right text-ink-2`}>{rupees(p.cost)}</td>
+                      <td className={`${td} text-right`}>{rupees(p.sales)}</td>
+                      <td className={cx(td, "text-right font-semibold", p.profit < 0 ? "text-bad" : "text-good")}>{rupees(p.profit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+              {r.outsideParts.length >= 5 ? <p className="px-5 py-3 text-[13px] text-ink-3">Parts you fetch often are worth stocking — buying them from your supplier is usually cheaper.</p> : null}
+            </>
+          ) : (
+            <p className="px-5 py-6 text-sm text-ink-3">No outside purchases in this period. When billing, mark a line <b>Bought outside</b> if you fetched the part from a showroom.</p>
+          )}
+        </Card>
+      </div>
+
+      {s.bills ? (
+        <>
+          <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
+            <Card>
+              <CardHeader title="Sales by day" sub={days > 1 ? `Average ${rupees(s.total / days)} a day` : undefined} />
+              <div className="px-3 pt-3 pb-2">{days > 1 ? <AreaChart data={r.daily} /> : <p className="p-6 text-sm text-ink-2">Pick a longer range to see the daily trend.</p>}</div>
+            </Card>
+            <Card>
+              <CardHeader title="Payment modes" />
+              <div className="p-5"><BarList items={r.modes.map((m) => ({ label: m.label, value: m.value, sub: `${m.n} bills` }))} /></div>
+            </Card>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card><CardHeader title="Sales by bike brand" sub="Before GST" /><div className="p-5"><BarList items={r.brands.map((b) => ({ label: b.label, value: b.value, sub: `${count(b.qty)} pcs` }))} /></div></Card>
+            <Card><CardHeader title="Sales by category" sub="Before GST" /><div className="p-5"><BarList items={r.categories.map((b) => ({ label: b.label, value: b.value, sub: `${count(b.qty)} pcs` }))} /></div></Card>
+          </div>
+
+          <Card className="mt-4">
+            <CardHeader title="Top 15 parts" sub="By sales value before GST" />
+            <Table>
+              <thead><tr><th className={th}>Part</th><th className={`${th} text-right`}>Qty</th><th className={`${th} text-right`}>Sales</th><th className={`${th} text-right`}>Profit</th><th className={`${th} text-right`}>Margin</th></tr></thead>
+              <tbody>
+                {r.topParts.map((p) => (
+                  <tr key={p.product_id} className="hover:bg-surface-2">
+                    <td className={td}><Link href={`/products/${p.product_id}`} className="font-medium hover:underline">{p.name}</Link><p className="font-mono text-xs text-ink-3">{p.sku}</p></td>
+                    <td className={`${td} text-right`}>{count(p.qty)}</td>
+                    <td className={`${td} text-right font-semibold`}>{rupees(p.amount)}</td>
+                    <td className={`${td} text-right text-good`}>{rupees(p.profit)}</td>
+                    <td className={`${td} text-right text-ink-2`}>{p.amount ? ((p.profit / p.amount) * 100).toFixed(1) : "0"}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader title="GST by rate" sub="For your GST return" />
+              <Table>
+                <thead><tr><th className={th}>Rate</th><th className={`${th} text-right`}>Taxable value</th><th className={`${th} text-right`}>Tax</th></tr></thead>
+                <tbody>{r.gst.map((g) => <tr key={g.rate}><td className={td}>{g.rate}%</td><td className={`${td} text-right`}>{rupees2(g.taxable)}</td><td className={`${td} text-right`}>{rupees2(g.tax)}</td></tr>)}</tbody>
+              </Table>
+            </Card>
+            <Card>
+              <CardHeader title="B2B and B2C" sub="B2B = customer gave a GSTIN" />
+              <Table>
+                <thead><tr><th className={th}>Type</th><th className={`${th} text-right`}>Bills</th><th className={`${th} text-right`}>Taxable value</th><th className={`${th} text-right`}>Tax</th></tr></thead>
+                <tbody>{r.b2b.map((g) => <tr key={g.kind}><td className={td}>{g.kind}</td><td className={`${td} text-right`}>{g.bills}</td><td className={`${td} text-right`}>{rupees2(g.taxable)}</td><td className={`${td} text-right`}>{rupees2(g.tax)}</td></tr>)}</tbody>
+              </Table>
+            </Card>
+          </div>
+        </>
+      ) : (
+        <Card className="mt-4"><Empty title="No sales in this period">Pick another date range above.</Empty></Card>
+      )}
+    </>
+  );
+}
+

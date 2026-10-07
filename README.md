@@ -1,22 +1,44 @@
 # Pistonpad
 
-Stock, GST billing and sales reports for a two-wheeler spare parts wholesale shop.
+One app for a two-wheeler shop that runs two businesses: **spare parts wholesale** (stock, GST billing, credit) and **used bike sales** (papers, loans, service history and profit on every bike), with expenses and reports for each business and combined.
 Built to stay fast with **millions of parts**: every page loads in about 20–110 ms, and search takes 20–50 ms, on a catalogue of 10 lakh parts (production build, a laptop).
 
 ## What it does
 
+**Spare parts**
+
 | Area | Features |
 |---|---|
-| **Billing** (`F2`) | Search by part number or name, or pick the customer's **bike brand + model** to list every part that fits it. Keyboard-first: `↑ ↓ Enter` to add, `F9` to save. Per-line discount, CGST/SGST or IGST (automatic from the customer's GSTIN), round-off, Cash/UPI/Card/Bank/Credit, part payments. |
-| **Invoices** | Gap-free numbering per financial year (`INV/26-27/00001`), printable A4 tax invoice with HSN summary and amount in words, WhatsApp share, receive payments, cancel (returns stock). |
-| **Parts** | Brand, category, HSN, rack/bin, cost, wholesale rate, MRP, GST rate, reorder level, **fits-models** picker. Filters by brand, model, category, stock level. Full stock history for each part. |
+| **Billing** (`F2`) | Search by part number or name, or pick the customer's **bike brand + model** to list every part that fits it. Wholesale or showroom rate list; mark a line **Bought outside** when the part was fetched from a showroom. Keyboard-first: `↑ ↓ Enter` to add, `F9` to save. Per-line discount, CGST/SGST or IGST (automatic from the customer's GSTIN), round-off, Cash/UPI/Card/Bank. |
+| **Invoices** | Gap-free numbering per financial year (`INV/26-27/00001`), printable A4 tax invoice with HSN summary and amount in words, PDF shared on WhatsApp, receive payments, cancel (returns stock). |
+| **Parts** | Brand, category, HSN, rack/bin, cost, showroom cost, wholesale and showroom rates, MRP, GST rate, reorder level, **fits-models** picker, suggested part numbers. Filters by brand, model, category, stock level, active/disabled. Full stock history for each part. |
 | **Stock in** | Enter a supplier's bill: many parts at once, optional cost-price update. |
-| **Customers** | Auto-saved from bills by phone number. Balances, credit limit warnings, bill history. |
-| **Reports** (owner) | Sales, GST collected, gross profit and margin, daily chart, payment modes, sales by brand and category, top parts, GST by rate, B2B/B2C. CSV downloads: invoices, item-wise, HSN summary for GSTR-1. |
+| **Customers** | Auto-saved from bills by phone number. Balances and bill history. |
 | **Import** (owner) | Upload a CSV from Excel, or use `npm run import -- file.csv` for millions of rows (about 5,000 rows/s). Missing brands, categories and models are created. |
-| **Settings** (owner) | Shop details and GSTIN, invoice prefix, brands, bike models, categories, staff logins. |
 
-Staff logins can bill and manage stock. Only owners see cost prices, profit, reports and settings.
+**Used bikes**
+
+| Area | Features |
+|---|---|
+| **Vehicle number lookup** | Type any number (`tn-76 ab 1234`, `22 BH 1234 AA`): opens the bike, or shows the state and RTO and offers to add it. |
+| **Bike record** | Make, model, year, km, chassis/engine no., condition; current and earlier owners with photos; bike, damage and document photos. |
+| **Papers** | RC (status, type, owner on RC, RTO), insurance (policy no., type, IDV), PUC, documents-in-hand checklist (Form 28/29/30/35, NOC, ID proof…), and a **ready for RC transfer** check that lists what's missing. Expiry warnings 15 days ahead. |
+| **Finance / loan** | Financier, account no., EMI, tenure, pending EMIs, closure amount and **who clears it: seller, shop or buyer**, NOC and Form 35. Deal-price breakdown so a loan is never counted twice. |
+| **Condition & history** | Damaged / repaired / replaced parts with warranty dates, accident history, service and repair jobs with cost, traffic fines (challans). |
+| **Selling** | Buyer, price and how they paid (incl. finance). Profit = sale price − (paid to owner + repairs + seller's loan cleared). |
+| **Browsing** | Filters for **every budget** (under ₹50K … above ₹3L), **finance status** (under finance, NOC pending, Form 35 pending, loan-free), stock status and search. |
+
+**Both businesses**
+
+| Area | Features |
+|---|---|
+| **Dashboard** | Month's profit by business and overall, money received today, a section for each business. |
+| **Expenses** | Tagged **Spare parts**, **Used bikes** or **Shared** (rent, power…). Totals per business. |
+| **Money received** (owner) | Parts payments, credit collected and bike sales by payment method; cash in hand after expenses. |
+| **Reports** (owner) | **Combined** profit and loss side by side; **Spare parts** (sales, GST, margin, rate lists, bought-outside parts, top parts, GST by rate, B2B/B2C); **Used bikes** (bikes sold, spent buying and servicing, month by month, loans the shop must pay, finance). CSV downloads for invoices, items, HSN (GSTR-1), expenses, payments, bike sales, purchases and service jobs. |
+| **Settings** (owner) | Shop details, logo and GSTIN, invoice prefix, brands, bike models, categories, staff logins. |
+
+Staff logins can bill, manage stock and record bikes and expenses. Only owners see cost prices, reports, money received and settings.
 
 ## Tech
 
@@ -84,16 +106,16 @@ Notes for Vercel:
 
 ### Option A: one VPS with Docker (simplest, about ₹500–1,500/month)
 
-Any Linux VPS with 2 GB+ RAM (DigitalOcean, Hetzner, AWS Lightsail, etc.):
+Any Linux VPS with 2 GB+ RAM (Hostinger, DigitalOcean, Hetzner, AWS Lightsail, etc.). Point your domain's DNS **A record** at the server first.
 
 ```bash
-git clone <your repo> pistonpad && cd pistonpad
-cp .env.example .env              # set SESSION_SECRET, ADMIN_PASSWORD, POSTGRES_PASSWORD
-docker compose up -d --build      # starts PostgreSQL + the app on port 3000; migrations run automatically
+git clone <your repo> /opt/pistonpad && cd /opt/pistonpad
+cp .env.example .env              # set SESSION_SECRET, ADMIN_PASSWORD, POSTGRES_PASSWORD and DOMAIN
+docker compose up -d --build      # PostgreSQL + the app + Caddy (free HTTPS for DOMAIN); migrations run automatically
 docker compose --profile tools run --rm setup   # first time only: brands, models, owner login
 ```
 
-Put a reverse proxy with HTTPS in front (Caddy is easiest: `your-domain.in { reverse_proxy localhost:3000 }`).
+The app listens only on `127.0.0.1:3000`; Caddy serves it on ports 80/443 and renews the certificate by itself.
 
 ### Option B: managed services
 
@@ -103,11 +125,10 @@ Put a reverse proxy with HTTPS in front (Caddy is easiest: `your-domain.in { rev
 
 ### Backups (do this before going live)
 
-Managed databases include daily backups. On a VPS, add a nightly dump:
+Managed databases include daily backups. On a VPS, `scripts/backup.sh` dumps the database (bike photos included) to `backups/` and keeps 14 days:
 
 ```bash
-# crontab -e
-30 2 * * * docker compose -f /path/to/pistonpad/docker-compose.yml exec -T db pg_dump -U spares -Fc spares > /backups/spares-$(date +\%F).dump
+echo "30 2 * * * root /opt/pistonpad/scripts/backup.sh >> /var/log/pistonpad-backup.log 2>&1" > /etc/cron.d/pistonpad-backup
 ```
 
 Copy the dumps off the server (for example to Google Drive or S3) and test a restore once.
@@ -130,8 +151,9 @@ db/migrations/        SQL schema (applied in order by scripts/migrate.mjs)
 db/catalog-data.ts    Starting brands, bike models and categories
 scripts/              migrate, seed, demo data and CSV import CLIs
 src/proxy.ts          Redirects signed-out visitors to /login
-src/lib/              database, auth, search, billing maths, invoices, reports, importer
-src/app/(app)/        Screens: dashboard, billing, invoices, parts, stock-in, customers, reports, settings, import
-src/app/api/          Search, catalogue, CSV export/import, health check
+src/lib/              database, auth, search, billing maths, invoices, reports, importer, vehicles, regno (Indian vehicle numbers)
+src/app/(app)/        Screens: dashboard, billing, invoices, parts, stock-in, customers, vehicles (used bikes),
+                      expenses, collections, reports (combined / parts / vehicles), settings, import
+src/app/api/          Search, catalogue, CSV export/import, bike photos, health check
 src/components/       UI kit, sidebar, part picker, charts
 ```

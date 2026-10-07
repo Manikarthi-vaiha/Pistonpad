@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { Button, Card, CardHeader, cx, Field, Input, Notice, Select } from "@/components/ui";
 import { DatePicker } from "@/components/DatePicker";
-import { EXPENSE_CATEGORIES, EXPENSE_MODES } from "@/lib/expenses";
+import { BUSINESSES, EXPENSE_CATEGORIES, EXPENSE_MODES } from "@/lib/expenses";
 import { isoDate } from "@/lib/format";
 import { addExpense, deleteExpense, type ExpenseState } from "./actions";
 
@@ -25,13 +25,15 @@ const ICONS: Record<string, React.ElementType> = {
 };
 
 /** usedCategories: this shop's categories, most used first. */
-export function ExpenseForm({ usedCategories }: { usedCategories: string[] }) {
+export function ExpenseForm({ usedCategories, business: initialBusiness }: { usedCategories: string[]; business?: string }) {
   const [state, action, pending] = useActionState<ExpenseState, FormData>(addExpense, {});
+  // Remembered across saves: staff usually enter several expenses for the same business in a row.
+  const [business, setBusiness] = useState(initialBusiness ?? "");
   // Most-used first, then the remaining standard ones; "Other" always last.
   const categories = [...new Set([...usedCategories, ...EXPENSE_CATEGORIES])].sort((a, b) => Number(a === "Other") - Number(b === "Other"));
   return (
     <Card className="xl:sticky xl:top-6 xl:self-start">
-      <CardHeader title="Add expense" sub="Rent, salaries, bills, freight — anything the shop pays for" />
+      <CardHeader title="Add expense" sub="Rent, salaries, bills, freight: anything either business pays for" />
       {/* key resets the fields after each save */}
       <form key={state.key ?? 0} action={action} className="flex flex-col gap-4 p-5">
         <div className="grid grid-cols-2 gap-3">
@@ -41,6 +43,20 @@ export function ExpenseForm({ usedCategories }: { usedCategories: string[] }) {
           </div>
           <Field label="Amount ₹"><Input name="amount" inputMode="decimal" placeholder="0" required autoFocus /></Field>
         </div>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1.5 text-[13px] font-medium text-ink-2">For which business</legend>
+          <input type="hidden" name="business" value={business} />
+          <div role="radiogroup" aria-label="Business" className="grid grid-cols-3 gap-1.5">
+            {Object.entries(BUSINESSES).map(([k, b]) => (
+              <button key={k} type="button" role="radio" aria-checked={business === k} onClick={() => setBusiness(k)} title={b.hint}
+                className={cx("rounded-lg border px-2 py-2 text-[13px] font-semibold transition-colors",
+                  business === k ? "border-primary bg-primary-soft text-primary" : "border-line bg-surface text-ink-2 hover:border-line-2 hover:text-ink")}>
+                {b.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-ink-3">{business ? BUSINESSES[business].hint : "Shared = costs both businesses use, like rent"}</span>
+        </fieldset>
         <CategoryPicker categories={categories} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Paid by">

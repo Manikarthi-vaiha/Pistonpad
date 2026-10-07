@@ -10,10 +10,10 @@ export const count = (n: number | null | undefined) => num.format(Number(n ?? 0)
 
 /** ₹1.2L / ₹3.4Cr style for compact dashboard figures. */
 export function rupeesShort(n: number) {
-  const a = Math.abs(n);
-  if (a >= 1e7) return `₹${(n / 1e7).toFixed(a >= 1e8 ? 1 : 2)}Cr`;
-  if (a >= 1e5) return `₹${(n / 1e5).toFixed(a >= 1e6 ? 1 : 2)}L`;
-  if (a >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`;
+  const a = Math.abs(n), sign = n < 0 ? "-" : "";
+  if (a >= 1e7) return `${sign}₹${(a / 1e7).toFixed(a >= 1e8 ? 1 : 2)}Cr`;
+  if (a >= 1e5) return `${sign}₹${(a / 1e5).toFixed(a >= 1e6 ? 1 : 2)}L`;
+  if (a >= 1e3) return `${sign}₹${(a / 1e3).toFixed(1)}K`;
   return rupees(n);
 }
 

@@ -4,41 +4,52 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Banknote, Boxes, FileText, LayoutDashboard, LogOut, Menu, PackagePlus, ReceiptIndianRupee, Settings, Upload, Users, Wallet, X,
+  BarChart3, Banknote, Bike, Boxes, FileText, LayoutDashboard, LogOut, Menu, PackagePlus, PieChart, Plus, ReceiptIndianRupee, Settings, Upload, Users, Wallet, X,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cx } from "./ui";
 import { logout } from "@/app/login/actions";
 
 type Item = { href: string; label: string; icon: React.ElementType; owner?: boolean; key?: string };
-const NAV: { section: string; items: Item[] }[] = [
+/** Grouped by business: the parts shop and the used-bike trade run side by side, sharing expenses and reports. */
+const NAV: { section: string; dot?: string; items: Item[] }[] = [
   {
-    section: "Counter",
+    section: "Overview",
+    items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    section: "Spare parts",
+    dot: "bg-primary",
     items: [
-      { href: "/", label: "Dashboard", icon: LayoutDashboard },
       { href: "/billing", label: "New bill", icon: ReceiptIndianRupee, key: "F2" },
       { href: "/invoices", label: "Invoices", icon: FileText },
       { href: "/customers", label: "Customers", icon: Users },
-    ],
-  },
-  {
-    section: "Stock",
-    items: [
       { href: "/products", label: "Parts", icon: Boxes },
       { href: "/stock-in", label: "Stock in", icon: PackagePlus },
       { href: "/import", label: "Import parts", icon: Upload, owner: true },
+      { href: "/reports/parts", label: "Parts report", icon: BarChart3, owner: true },
     ],
   },
   {
-    section: "Business",
+    section: "Used bikes",
+    dot: "bg-info",
+    items: [
+      { href: "/vehicles", label: "Bikes", icon: Bike },
+      { href: "/vehicles/new", label: "Add bike", icon: Plus },
+      { href: "/reports/vehicles", label: "Bikes report", icon: BarChart3, owner: true },
+    ],
+  },
+  {
+    section: "Shop",
     items: [
       { href: "/expenses", label: "Expenses", icon: Wallet },
       { href: "/collections", label: "Money received", icon: Banknote, owner: true },
-      { href: "/reports", label: "Reports", icon: BarChart3, owner: true },
+      { href: "/reports", label: "All reports", icon: PieChart, owner: true },
       { href: "/settings", label: "Settings", icon: Settings, owner: true },
     ],
   },
 ];
+const ALL_HREFS = NAV.flatMap((g) => g.items.map((i) => i.href));
 
 export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; role: string }; shopName: string; logoUrl: string | null }) {
   const path = usePathname();
@@ -55,16 +66,21 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
     return () => window.removeEventListener("keydown", onKey);
   }, [path, router]);
 
-  const isActive = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+  // The most specific matching link wins, so /reports/vehicles lights up "Bikes report", not "All reports".
+  const matches = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+  const activeHref = ALL_HREFS.filter(matches).sort((a, b) => b.length - a.length)[0];
+  const isActive = (href: string) => href === activeHref;
 
   const nav = (
-    <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-4">
+    <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
       {NAV.map((g) => {
         const items = g.items.filter((i) => !i.owner || user.role === "owner");
         if (!items.length) return null;
         return (
           <div key={g.section}>
-            <p className="px-3 pb-2 text-[11px] font-semibold tracking-[0.14em] text-side-ink/60 uppercase">{g.section}</p>
+            <p className="flex items-center gap-2 px-3 pb-2 text-[11px] font-semibold tracking-[0.14em] text-side-ink/60 uppercase">
+              {g.dot ? <span className={cx("h-1.5 w-1.5 rounded-full", g.dot)} aria-hidden /> : null}{g.section}
+            </p>
             <ul className="flex flex-col gap-0.5">
               {items.map((i) => {
                 const active = isActive(i.href);

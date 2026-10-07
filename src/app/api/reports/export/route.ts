@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { currentUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
+import { EVENT_KINDS, REFURB_KINDS } from "@/lib/regno";
+import { bikeCost } from "@/lib/vehicles";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const cell = (v: unknown) => {
@@ -34,10 +36,32 @@ export async function GET(req: NextRequest) {
                 where i.invoice_date between ${from} and ${to} and i.status <> 'cancelled' and it.source = 'outside'
                 order by i.id, it.id`;
   } else if (type === "expenses") {
-    header = ["Date", "Category", "Amount", "Paid by", "Paid to", "Note", "Added by"];
-    query = sql`select to_char(e.expense_date, 'YYYY-MM-DD'), e.category, e.amount, e.payment_mode, e.paid_to, e.note, coalesce(u.name, '')
+    header = ["Date", "Business", "Category", "Amount", "Paid by", "Paid to", "Note", "Added by"];
+    query = sql`select to_char(e.expense_date, 'YYYY-MM-DD'),
+                  case e.business when 'parts' then 'Spare parts' when 'vehicles' then 'Used bikes' else 'Shared' end,
+                  e.category, e.amount, e.payment_mode, e.paid_to, e.note, coalesce(u.name, '')
                 from expenses e left join users u on u.id = e.user_id
                 where e.expense_date between ${from} and ${to} order by e.expense_date, e.id`;
+  } else if (type === "bike_purchases") {
+    header = ["Bought on", "Vehicle no", "Make", "Model", "Year", "Bought from", "Price", "Status now"];
+    query = sql`select to_char(purchase_date, 'YYYY-MM-DD'), reg_no, make, model, mfg_year, purchased_from, purchase_price,
+                  case status when 'in_stock' then 'In stock' when 'reserved' then 'Reserved' when 'in_service' then 'In service' else 'Sold' end
+                from vehicles where purchase_date between ${from} and ${to} order by purchase_date, id`;
+  } else if (type === "bike_services") {
+    header = ["Date", "Vehicle no", "Make", "Model", "Work type", "Details", "Odometer km", "Cost"];
+    query = sql`select to_char(e.event_date, 'YYYY-MM-DD'), v.reg_no, v.make, v.model,
+                  case e.kind ${sql.unsafe(Object.entries(EVENT_KINDS).map(([k, l]) => `when '${k}' then '${l}'`).join(" "))} else e.kind end,
+                  e.title, e.odometer_km, e.cost
+                from vehicle_events e join vehicles v on v.id = e.vehicle_id
+                where e.kind in ${sql(REFURB_KINDS)} and e.event_date between ${from} and ${to} order by e.event_date, e.id`;
+  } else if (type === "bikes") {
+    header = ["Sold on", "Vehicle no", "Make", "Model", "Year", "Bought on", "Bought for", "Service & repairs", "Loan closure paid by us",
+      "Total cost", "Sold for", "Profit", "Days in stock", "Buyer", "Buyer phone", "Paid by"];
+    query = sql`select to_char(v.sold_on, 'YYYY-MM-DD'), v.reg_no, v.make, v.model, v.mfg_year, to_char(v.purchase_date, 'YYYY-MM-DD'),
+                  coalesce(v.purchase_price, 0), c.refurb, c.loan, c.total, v.sold_price, v.sold_price - c.total,
+                  v.sold_on - v.purchase_date, v.sold_to, v.sold_phone, v.sold_payment_mode
+                from vehicles v cross join lateral (${bikeCost()}) c
+                where v.status = 'sold' and v.sold_on between ${from} and ${to} order by v.sold_on, v.id`;
   } else if (type === "items") {
     header = ["Invoice no", "Date", "Customer", "Customer GSTIN", "Part no", "Part", "Brand", "HSN", "Qty", "Unit", "Rate", "Discount %", "Taxable", "GST %", "Tax", "Total", "Cost", "Profit", "Source"];
     query = sql`select i.invoice_no, to_char(i.invoice_date, 'YYYY-MM-DD'), i.customer_name, i.customer_gstin, it.sku, it.name, it.brand, it.hsn,
@@ -79,7 +103,7 @@ export async function GET(req: NextRequest) {
   return new Response(stream, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${type}-${from}-to-${to}.csv"`,
+      "Content-Disposition": `attachment; filename="${type.replace(/[^a-z]/g, "") || "report"}-${from}-to-${to}.csv"`,
     },
   });
 }

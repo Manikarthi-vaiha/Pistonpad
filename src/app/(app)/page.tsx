@@ -1,12 +1,13 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowRight, Boxes, IndianRupee, ReceiptIndianRupee, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bike, Boxes, IndianRupee, ReceiptIndianRupee, Wallet } from "lucide-react";
 import { AreaChart } from "@/components/charts";
 import { Badge, Card, CardHeader, Empty, InvoiceStatus, LinkButton, Notice, PageHeader, StockBadge, Table, td, th } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { count, dateLabel, isoDate, rupees, rupeesShort, timeLabel } from "@/lib/format";
 import { estimatedProductCount } from "@/lib/products";
-import { collectionsReport } from "@/lib/reports";
+import { collectionsReport, combinedReport } from "@/lib/reports";
+import { vehicleSummary } from "@/lib/vehicles";
 
 export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const user = await requireUser();
@@ -17,7 +18,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
   const monthStart = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
   const from30 = isoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29));
 
-  const [[kpi], series, recent, low, [lowCount], top, parts, collected] = await Promise.all([
+  const [[kpi], series, recent, low, [lowCount], top, parts, collected, bikes, [bikeAlerts], month] = await Promise.all([
     sql<{ today: number; today_n: number; month: number; month_n: number; month_profit: number; dues: number; due_n: number; month_expenses: number }[]>`
       select
         coalesce(sum(total) filter (where invoice_date = ${today}), 0) as today,
@@ -27,7 +28,7 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         coalesce(sum(taxable - cost_total) filter (where invoice_date >= ${monthStart}), 0) as month_profit,
         (select coalesce(sum(total - amount_paid), 0) from invoices where status in ('due','partial')) as dues,
         (select count(*)::int from invoices where status in ('due','partial')) as due_n,
-        (select coalesce(sum(amount), 0) from expenses where expense_date >= ${monthStart}) as month_expenses
+        (select coalesce(sum(amount), 0) from expenses where expense_date >= ${monthStart} and business = 'parts') as month_expenses
       from invoices where invoice_date >= least(${monthStart}::date, ${today}::date) and status <> 'cancelled'`,
     sql<{ date: string; value: number }[]>`
       select to_char(d, 'YYYY-MM-DD') as date, coalesce(sum(i.total), 0) as value
@@ -48,6 +49,12 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
       group by it.product_id order by amount desc limit 6`,
     estimatedProductCount(),
     collectionsReport(today, today),
+    vehicleSummary(),
+    sql<{ loans: number; fines: number }[]>`
+      select count(*) filter (where loan_status in ('active', 'closed'))::int as loans,
+             (select count(distinct vehicle_id)::int from vehicle_fines f join vehicles x on x.id = f.vehicle_id where f.status = 'pending' and x.status <> 'sold') as fines
+      from vehicles where status <> 'sold'`,
+    owner ? combinedReport(monthStart, today) : null,
   ]);
   const todayMethods = collected.methods.filter((m) => m.received || m.expenses || m.mode === "Cash" || m.mode === "UPI");
   const cashNet = collected.methods.find((m) => m.mode === "Cash")?.net ?? 0;
@@ -61,26 +68,38 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
         title={`${greeting}, ${user.name.split(" ")[0]}`}
         sub={now.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
         actions={
-          <LinkButton href="/billing" variant="primary" size="lg">
-            <ReceiptIndianRupee className="h-5 w-5" /> New bill
-          </LinkButton>
+          <>
+            <LinkButton href="/vehicles/new" size="lg"><Bike className="h-5 w-5" /> Add bike</LinkButton>
+            <LinkButton href="/billing" variant="primary" size="lg">
+              <ReceiptIndianRupee className="h-5 w-5" /> New bill
+            </LinkButton>
+          </>
         }
       />
       {denied ? <div className="mb-6"><Notice tone="warn">That page is only for the shop owner.</Notice></div> : null}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Kpi icon={IndianRupee} label="Today's sales" value={rupees(kpi.today)} sub={`${kpi.today_n} bill${kpi.today_n === 1 ? "" : "s"}`} accent />
-        <Kpi icon={ReceiptIndianRupee} label={`${monthName} sales`} value={rupeesShort(kpi.month)}
-          sub={owner ? `${count(kpi.month_n)} bills · net profit ${rupeesShort(kpi.month_profit - kpi.month_expenses)}` : `${count(kpi.month_n)} bills`}
-          href={owner ? "/reports?range=month" : undefined} />
-        <Kpi icon={Wallet} label="Credit to collect" value={rupeesShort(kpi.dues)} sub={`${kpi.due_n} unpaid bill${kpi.due_n === 1 ? "" : "s"}`} href="/invoices?status=unpaid" tone={kpi.dues > 0 ? "warn" : undefined} />
-        <Kpi icon={Boxes} label="Parts in catalogue" value={count(parts)} sub={`${lowCount.n > 10000 ? "10,000+" : count(lowCount.n)} need reordering`} href="/products?stock=low" tone={lowCount.n > 0 ? "warn" : undefined} />
-      </div>
+      {month ? (
+        <Card className="mb-5">
+          <div className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
+            {[
+              ["Spare parts profit", month.parts.net, "/reports/parts?range=month"],
+              ["Used bikes profit", month.bikes.net, "/reports/vehicles?range=month"],
+              ["Shared costs", -month.shared.expenseTotal, "/expenses?business=shared"],
+              [`${monthName} net profit`, month.net, "/reports?range=month"],
+            ].map(([label, value, href], i) => (
+              <Link key={String(label)} href={String(href)} className="px-5 py-4 hover:bg-surface-2">
+                <p className="text-[12.5px] text-ink-2">{label}</p>
+                <p className={`num mt-1 text-xl font-bold tracking-tight ${Number(value) < 0 ? "text-bad" : i === 3 ? "text-good" : ""}`}>{rupees(Number(value))}</p>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
-      <Card className="mt-4">
+      <Card>
         <div className="flex flex-wrap items-center gap-x-8 gap-y-4 px-5 py-4">
           <div>
-            <p className="text-[13px] font-medium text-ink-2">Received today</p>
+            <p className="text-[13px] font-medium text-ink-2">Received today <span className="font-normal text-ink-3">· parts and bikes</span></p>
             <p className="num text-2xl font-bold tracking-tight">{rupees(collected.total)}</p>
           </div>
           {todayMethods.map((m) => (
@@ -96,6 +115,28 @@ export default async function Dashboard({ searchParams }: PageProps<"/">) {
           {owner ? <Link href="/collections" className="flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Details <ArrowRight className="h-4 w-4" /></Link> : null}
         </div>
       </Card>
+
+      <ModuleHeading dot="bg-primary" title="Spare parts" href="/products" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi icon={IndianRupee} label="Today's sales" value={rupees(kpi.today)} sub={`${kpi.today_n} bill${kpi.today_n === 1 ? "" : "s"}`} accent />
+        <Kpi icon={ReceiptIndianRupee} label={`${monthName} sales`} value={rupeesShort(kpi.month)}
+          sub={owner ? `${count(kpi.month_n)} bills · parts profit ${rupeesShort(kpi.month_profit - kpi.month_expenses)}` : `${count(kpi.month_n)} bills`}
+          href={owner ? "/reports/parts?range=month" : undefined} />
+        <Kpi icon={Wallet} label="Credit to collect" value={rupeesShort(kpi.dues)} sub={`${kpi.due_n} unpaid bill${kpi.due_n === 1 ? "" : "s"}`} href="/invoices?status=unpaid" tone={kpi.dues > 0 ? "warn" : undefined} />
+        <Kpi icon={Boxes} label="Parts in catalogue" value={count(parts)} sub={`${lowCount.n > 10000 ? "10,000+" : count(lowCount.n)} need reordering`} href="/products?stock=low" tone={lowCount.n > 0 ? "warn" : undefined} />
+      </div>
+
+      <ModuleHeading dot="bg-info" title="Used bikes" href="/vehicles" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Kpi icon={Bike} label="Bikes in stock" value={count(bikes.available)} sub={`${bikes.reserved} reserved · ${bikes.in_service} in service`} href="/vehicles" />
+        <Kpi icon={IndianRupee} label="Money in bikes" value={rupeesShort(Number(bikes.invested))} sub={`Asking ${rupeesShort(Number(bikes.asking))} in total`} href="/vehicles" />
+        <Kpi icon={ReceiptIndianRupee} label={`Bikes sold in ${monthName}`} value={count(bikes.sold_month)}
+          sub={owner ? `Profit ${rupeesShort(Number(bikes.profit_month))} before bike expenses` : "This month"} href={owner ? "/reports/vehicles?range=month" : "/vehicles?status=sold"} />
+        <Kpi icon={AlertTriangle} label="Need attention" value={count(bikes.docs_due + bikeAlerts.loans + bikeAlerts.fines)}
+          sub={[`${bikes.docs_due} papers expiring`, `${bikeAlerts.loans} loans open`, `${bikeAlerts.fines} with fines`].join(" · ")}
+          href="/vehicles" tone={bikes.docs_due + bikeAlerts.loans + bikeAlerts.fines ? "warn" : undefined} />
+      </div>
+
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.6fr_1fr]">
         <Card>
@@ -201,4 +242,13 @@ function Kpi({ icon: Icon, label, value, sub, href, accent, tone }: { icon: Reac
     </div>
   );
   return href ? <Link href={href} className="block">{body}</Link> : body;
+}
+
+function ModuleHeading({ dot, title, href }: { dot: string; title: string; href: string }) {
+  return (
+    <div className="mt-6 mb-3 flex items-center justify-between">
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold"><span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden /> {title}</h2>
+      <Link href={href} className="flex items-center gap-1 text-sm font-semibold text-primary hover:underline">Open <ArrowRight className="h-4 w-4" /></Link>
+    </div>
+  );
 }

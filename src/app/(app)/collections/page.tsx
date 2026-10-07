@@ -32,7 +32,7 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
 
       <Card className="mb-5">
         <form className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <p className="text-sm text-ink-2">Money that actually came in — bill payments plus credit collected — by payment method.</p>
+          <p className="text-sm text-ink-2">Money that actually came in, by payment method: parts bills, credit collected and used bike sales.</p>
           <DateRangePicker from={from} to={to} max={today} autoSubmit className="w-72 max-w-full" />
         </form>
       </Card>
@@ -41,7 +41,8 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
         <p className="text-[13px] font-medium opacity-85">Total received</p>
         <p className="num mt-2 text-[40px] leading-none font-bold tracking-tight">{rupees(r.total)}</p>
         <p className="mt-2 text-[13px] opacity-85">
-          {r.collectedLater ? <>Includes {rupees(r.collectedLater)} of credit collected · </> : null}
+          {r.bikes ? <>Includes {rupees(r.bikes)} from used bike sales · </> : null}
+          {r.collectedLater ? <>{rupees(r.collectedLater)} of credit collected · </> : null}
           {rupees(r.expenses)} paid out as expenses · <b>{rupees(r.total - r.expenses)} net</b>
         </p>
       </div>
@@ -58,8 +59,9 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
               <p className="num mt-2 text-[28px] leading-none font-bold tracking-tight">{rupees(m.received)}</p>
               <p className="mt-1 text-[12.5px] text-ink-3">{count(m.payments)} payment{m.payments === 1 ? "" : "s"}</p>
               <dl className="num mt-4 grid grid-cols-[1fr_auto] gap-y-1 border-t border-line pt-3 text-[13px]">
-                <dt className="text-ink-2">At billing</dt><dd className="text-right">{rupees(m.atBilling)}</dd>
-                <dt className="text-ink-2">Credit collected</dt><dd className="text-right">{rupees(m.collectedLater)}</dd>
+                <dt className="text-ink-2">Parts: at billing</dt><dd className="text-right">{rupees(m.atBilling)}</dd>
+                <dt className="text-ink-2">Parts: credit collected</dt><dd className="text-right">{rupees(m.collectedLater)}</dd>
+                <dt className="text-ink-2">Used bike sales{m.bikesSold ? ` (${m.bikesSold})` : ""}</dt><dd className="text-right">{rupees(m.bikes)}</dd>
                 <dt className="text-ink-2">− Expenses paid</dt><dd className="text-right text-warn">{rupees(m.expenses)}</dd>
                 <dt className="pt-1 font-semibold">{m.mode === "Cash" ? "Cash in hand (net)" : "Net"}</dt>
                 <dd className={cx("pt-1 text-right font-semibold", m.net < 0 && "text-bad")}>{rupees(m.net)}</dd>
