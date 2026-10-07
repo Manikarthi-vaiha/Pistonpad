@@ -4,8 +4,9 @@ const inr0 = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR"
 const inr2 = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const num = new Intl.NumberFormat("en-IN");
 
-export const rupees = (n: number | null | undefined) => inr0.format(Number(n ?? 0));
-export const rupees2 = (n: number | null | undefined) => inr2.format(Number(n ?? 0));
+// `|| 0` also turns -0 into 0, so an empty total never shows as "-₹0".
+export const rupees = (n: number | null | undefined) => inr0.format(Number(n ?? 0) || 0);
+export const rupees2 = (n: number | null | undefined) => inr2.format(Number(n ?? 0) || 0);
 export const count = (n: number | null | undefined) => num.format(Number(n ?? 0));
 
 /** ₹1.2L / ₹3.4Cr style for compact dashboard figures. */
