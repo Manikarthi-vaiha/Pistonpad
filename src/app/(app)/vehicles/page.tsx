@@ -27,8 +27,9 @@ export default async function VehiclesPage({ searchParams }: PageProps<"/vehicle
     notFound = parseReg(reg);
   }
 
-  const status = "status" in sp ? one("status") : "available";
   const q = one("q");
+  // A typed search looks through every bike, sold ones too, unless a status tab was picked.
+  const status = "status" in sp ? one("status") : q ? "" : "available";
   const after = /^\d+$/.test(one("after")) ? Number(one("after")) : undefined;
   const budget = BUDGETS.some((b) => b.key === one("budget")) ? one("budget") : "";
   const finance = FINANCE_FILTERS.some((f) => f.key === one("finance")) ? one("finance") : "";
@@ -154,7 +155,7 @@ export default async function VehiclesPage({ searchParams }: PageProps<"/vehicle
             ))}
           </nav>
           <form action="/vehicles" className="relative w-full lg:max-w-xs">
-            <input type="hidden" name="status" value={status} />
+            {"status" in sp ? <input type="hidden" name="status" value={status} /> : null}
             {budget ? <input type="hidden" name="budget" value={budget} /> : null}
             {finance ? <input type="hidden" name="finance" value={finance} /> : null}
             <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-ink-3" />

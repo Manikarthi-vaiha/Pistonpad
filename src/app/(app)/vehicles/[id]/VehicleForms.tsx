@@ -4,14 +4,14 @@ import { useActionState, useState, useTransition } from "react";
 import { Check, Plus, RotateCcw, Trash2, Wrench, X } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
-import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { isoDate } from "@/lib/format";
 import { COMMON_PARTS, EVENT_KINDS, PART_STATUS, VEHICLE_STATUS } from "@/lib/regno";
 import {
   addEvent, addFine, addOwner, addPart, deleteEvent, deleteFine, deleteOwner, deletePart, deleteVehicle, fixPart, markSold, setFineStatus, setVehicleStatus,
   type VehicleState,
 } from "../actions";
-import { DocFields } from "./VehicleDocs";
+import type { Financier } from "@/lib/financiers";
+import { DocFields, PaymentModeSelect } from "./VehicleDocs";
 
 type Action = (id: number, s: VehicleState, f: FormData) => Promise<VehicleState>;
 
@@ -97,14 +97,15 @@ export function OwnerForm({ vehicleId, nextNo }: { vehicleId: number; nextNo: nu
   );
 }
 
-export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, odometerKm, papers }: {
+export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, odometerKm, papers, financiers }: {
   vehicleId: number; ourPrice: number | null; minPrice: number | null; buyerLoan: { amount: number; financier: string } | null;
-  nowTime: string; odometerKm: number | null; papers: string[];
+  nowTime: string; odometerKm: number | null; papers: string[]; financiers: Financier[];
 }) {
   // On success the server action redirects to the new sale invoice.
   const [state, run, pending] = useActionState<VehicleState, FormData>(markSold.bind(null, vehicleId), {});
   const [price, setPrice] = useState(ourPrice != null ? String(ourPrice) : "");
   const below = minPrice != null && Number(price) > 0 && Number(price) < minPrice;
+  const salePrice = parseFloat(price) || undefined;
   return (
     <form action={run} className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -115,7 +116,7 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
         <Field label="Buyer name"><Input name="buyer" required /></Field>
         <Field label="Buyer phone"><Input name="phone" type="tel" /></Field>
         <Field label="Paid by" hint="Finance = buyer's loan company pays us" className="col-span-2">
-          <Select name="mode" defaultValue="Cash">{BIKE_PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}</Select>
+          <PaymentModeSelect defaultValue="Cash" financiers={financiers} salePrice={salePrice} />
         </Field>
       </div>
       <p className="-mb-1 border-t border-line pt-3 text-[11.5px] font-semibold tracking-wider text-ink-3 uppercase">For the sale invoice</p>

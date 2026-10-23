@@ -128,6 +128,8 @@ export async function collectionsReport(from: string, to: string) {
 export type BikeSale = {
   id: number; reg_no: string; make: string; model: string; mfg_year: number | null; sold_on: string; sold_to: string;
   sold_payment_mode: string; bought: number; refurb: number; loan: number; buyer_loan: number; cost: number; sold_price: number; profit: number; days: number | null;
+  // Finance details from the sale invoice (null if not on finance)
+  buyer_finance_name: string | null; buyer_down_payment: number | null; buyer_tenure_months: number | null; buyer_emi_amount: number | null;
 };
 
 /** Used-bike business for a period: bikes sold (with full cost and profit), bought, money spent on them, stock now. */
@@ -140,8 +142,13 @@ export async function vehicleReport(from: string, to: string) {
     sql<BikeSale[]>`
       select v.id, v.reg_no, v.make, v.model, v.mfg_year, to_char(v.sold_on, 'YYYY-MM-DD') as sold_on, v.sold_to, v.sold_payment_mode,
              coalesce(v.purchase_price, 0) as bought, c.refurb, c.loan, c.buyer_loan, c.total as cost, v.sold_price, v.sold_price - c.total as profit,
-             v.sold_on - v.purchase_date as days
+             v.sold_on - v.purchase_date as days,
+             inv.buyer_finance_name, inv.buyer_down_payment, inv.buyer_tenure_months, inv.buyer_emi_amount
       from vehicles v cross join lateral (${bikeCost()}) c
+      left join lateral (
+        select buyer_finance_name, buyer_down_payment, buyer_tenure_months, buyer_emi_amount
+        from vehicle_invoices where vehicle_id = v.id and kind = 'sale' and status = 'issued' limit 1
+      ) inv on true
       where ${soldIn} order by v.sold_on desc, v.id desc limit 500`,
     sql<{ n: number; owners: number; financiers: number; loans: number; spent: number }[]>`
       select count(*) filter (where purchase_date between ${from} and ${to})::int as n,

@@ -243,9 +243,19 @@ const docFields = {
   papers: z.array(z.string().refine((k) => DOC_CHECKLIST.some((x) => x.key === k))).max(DOC_CHECKLIST.length),
   notes: text(300),
 };
+const financeFields = {
+  buyerFinanceId: z.union([z.literal(""), z.coerce.number().int().positive()]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  buyerFinanceName: text(120),
+  buyerDownPayment: z.union([z.literal(""), z.coerce.number().min(0)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  buyerTenureMonths: z.union([z.literal(""), z.coerce.number().int().min(1).max(120)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  buyerEmiAmount: z.union([z.literal(""), z.coerce.number().min(0)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+};
 const docFieldValues = (f: FormData) => ({
   time: str(f, "time"), address: str(f, "address"), idProof: str(f, "idProof"), odometerKm: strOrNull(f, "odometerKm"),
   papers: [...new Set(f.getAll("papers").map(String))], notes: str(f, "docNotes"),
+  buyerFinanceId: str(f, "buyerFinanceId"), buyerFinanceName: str(f, "buyerFinanceName"),
+  buyerDownPayment: str(f, "buyerDownPayment"), buyerTenureMonths: str(f, "buyerTenureMonths"),
+  buyerEmiAmount: str(f, "buyerEmiAmount"),
 });
 
 const saleSchema = z.object({
@@ -253,7 +263,7 @@ const saleSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the sale date."),
   buyer: z.string().trim().min(2, "Enter the buyer's name.").max(120), phone: text(20),
   mode: z.string().refine((m) => BIKE_PAYMENT_MODES.includes(m), "Choose how the buyer paid."),
-  ...docFields,
+  ...docFields, ...financeFields,
 });
 /** Marks the bike sold and issues its numbered sale invoice in the same step. */
 export async function markSold(vehicleId: number, _: VehicleState, f: FormData): Promise<VehicleState> {
@@ -274,6 +284,8 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
       return issueVehicleDoc(tx, {
         vehicleId, kind: "sale", date: d.date, time: d.time, partyName: d.buyer, partyPhone: d.phone, partyAddress: d.address,
         partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
+        buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
+        buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
       });
     });
   } catch (e) {
@@ -291,7 +303,7 @@ const docSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the date."),
   party: z.string().trim().min(2, "Enter the name.").max(120), phone: text(20),
   mode: text(20),
-  ...docFields,
+  ...docFields, ...financeFields,
 });
 
 /** Issues a sale invoice (for a bike sold before invoices existed) or a purchase receipt from the previous owner. */
@@ -317,6 +329,8 @@ export async function createVehicleDoc(vehicleId: number, kind: VehicleDocKind, 
       return issueVehicleDoc(tx, {
         vehicleId, kind, date: d.date, time: d.time, partyName: d.party, partyPhone: d.phone, partyAddress: d.address,
         partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
+        buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
+        buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
       });
     });
   } catch (e) {

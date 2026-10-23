@@ -8,6 +8,7 @@ import { Badge, Card, CardHeader, cx, LinkButton, Notice } from "@/components/ui
 import { requireUser } from "@/lib/auth";
 import { count, dateLabel, rupees } from "@/lib/format";
 import { CONDITIONS, daysLeft, DOC_CHECKLIST, EVENT_KINDS, INSURANCE_TYPES, LOAN_IN_COST, LOAN_PAID_BY, LOAN_STATUS, ordinal, PART_STATUS, RC_STATUS, RC_TYPES, transferCheck, parseReg, VEHICLE_STATUS } from "@/lib/regno";
+import { listFinanciers } from "@/lib/financiers";
 import { vehicleDocsFor } from "@/lib/vehicle-docs";
 import { getVehicle, getVehicleDetails } from "@/lib/vehicles";
 import { DocForm } from "./VehicleDocs";
@@ -23,7 +24,7 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
   const { id } = await params;
   const { saved } = await searchParams;
   if (!/^\d+$/.test(id)) notFound();
-  const [v, d, docs] = await Promise.all([getVehicle(Number(id)), getVehicleDetails(Number(id)), vehicleDocsFor(Number(id))]);
+  const [v, d, docs, financiers] = await Promise.all([getVehicle(Number(id)), getVehicleDetails(Number(id)), vehicleDocsFor(Number(id)), listFinanciers(true)]);
   if (!v) notFound();
 
   const reg = parseReg(v.reg_no);
@@ -304,7 +305,7 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
                 <CardHeader title="Sell this bike" sub="Records the buyer and closes the bike" />
                 <div className="p-5"><SellForm vehicleId={v.id} ourPrice={v.our_price != null ? Number(v.our_price) : null} minPrice={v.min_price != null ? Number(v.min_price) : null}
                   buyerLoan={v.loan_paid_by === "buyer" && v.loan_status !== "none" ? { amount: Number(v.loan_closure_amount ?? 0), financier: v.hypothecation } : null}
-                  nowTime={nowTime} odometerKm={v.odometer_km} papers={v.docs_in_hand} /></div>
+                  nowTime={nowTime} odometerKm={v.odometer_km} papers={v.docs_in_hand} financiers={financiers} /></div>
               </>
             )}
           </Card>
@@ -328,7 +329,7 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
             ) : null}
             <div className={cx("flex flex-wrap gap-2 px-5 py-4", docs.length && "border-t border-line")}>
               {!openPurchase ? (
-                <DocForm vehicleId={v.id} kind="purchase" nowTime={nowTime}
+                <DocForm vehicleId={v.id} kind="purchase" nowTime={nowTime} financiers={financiers}
                   summary={v.purchase_price != null
                     ? `From ${v.current_owner || "the owner"} for ${rupees(v.purchase_price)}${LOAN_IN_COST.includes(v.loan_paid_by) && v.loan_status !== "none" && Number(v.loan_closure_amount) ? ` + ${rupees(v.loan_closure_amount)} loan with ${v.hypothecation || "the financier"}` : ""}. To change the amounts, edit the bike's prices.`
                     : "Enter what you paid for the bike (Edit → Prices) before issuing a purchase receipt."}
@@ -336,7 +337,8 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
                     idProof: v.owner_id_proof, mode: "Cash", odometerKm: v.odometer_km, papers: v.docs_in_hand }} />
               ) : null}
               {v.status === "sold" && !openSale ? (
-                <DocForm vehicleId={v.id} kind="sale" nowTime={nowTime}
+                <DocForm vehicleId={v.id} kind="sale" nowTime={nowTime} financiers={financiers}
+                  salePrice={v.sold_price != null ? Number(v.sold_price) : undefined}
                   summary={`To ${v.sold_to} for ${rupees(v.sold_price)}. Details below print on the invoice.`}
                   defaults={{ date: v.sold_on ?? "", party: v.sold_to, phone: v.sold_phone, address: v.sold_address, idProof: v.sold_id_proof,
                     mode: v.sold_payment_mode, odometerKm: v.odometer_km, papers: v.docs_in_hand }} />

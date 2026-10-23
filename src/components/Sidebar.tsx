@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Banknote, Bike, Boxes, FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, PackagePlus, PieChart, Plus, ReceiptIndianRupee, Settings, Upload, Users, Wallet, X,
+  BarChart3, Banknote, Bike, Boxes, Building2, FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, PackagePlus, PieChart, Plus, ReceiptIndianRupee, ReceiptText, Settings, Upload, Users, Wallet, X,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cx } from "./ui";
@@ -36,6 +36,8 @@ const NAV: { section: string; dot?: string; items: Item[] }[] = [
     items: [
       { href: "/vehicles", label: "Bikes", icon: Bike },
       { href: "/vehicles/new", label: "Add bike", icon: Plus },
+      { href: "/vehicles/documents", label: "Invoices & receipts", icon: ReceiptText },
+      { href: "/finance", label: "Finance companies", icon: Building2, owner: true },
       { href: "/reports/vehicles", label: "Bikes report", icon: BarChart3, owner: true },
     ],
   },

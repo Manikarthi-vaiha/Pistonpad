@@ -10,9 +10,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    // Browser extensions often add attributes to <html>; don't warn about those.
+    // Browser extensions (Grammarly, password managers…) add attributes to <html> and <body> before React
+    // loads; don't warn about those. This only affects these two tags' own attributes, not the page inside.
     <html lang="en-IN" suppressHydrationWarning>
-      <body>{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

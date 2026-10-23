@@ -227,7 +227,7 @@ export const en: HelpLang = {
           "**Used bikes for every budget**: Under ₹50K, ₹50K–75K, ₹75K–1L, ₹1L–1.5L, ₹1.5L–2L, ₹2L–3L, Above ₹3L, based on **Our price**. Each card shows how many bikes are available.",
           "**Bikes by finance**: Under finance (loan still running), NOC pending, Form 35 pending and Loan-free, with the financier names.",
           "**Status tabs**: Available, In stock, Reserved, In service, Sold, All.",
-          "**Search**: bike, owner, buyer, phone, chassis or engine number.",
+          "**Search**: bike, owner, buyer, phone, chassis or engine number. A typed search looks through all bikes, sold ones too, unless you pick a status tab.",
         ] },
         { type: "p", text: "The **Alerts** column warns about insurance or PUC expiring within 15 days, unpaid fines, accident history, damaged parts and open loans." },
       ],
@@ -421,6 +421,7 @@ export const en: HelpLang = {
           { label: "Total sale value", value: "₹95,000", kind: "total" },
         ] },
         { type: "list", items: [
+          "**Find anyone's documents**: open **Used bikes → Invoices & receipts** and search a name, phone, document number (BS/…, BP/…) or vehicle number. Each row has **PDF** and **WhatsApp** buttons. Searching a name lists every invoice and receipt with that person, cancelled ones included.",
           "**Print**, **Share PDF** (on a phone it sends the file), **WhatsApp** (sends a link to the PDF) or download the **PDF**.",
           "Numbers run without gaps for each financial year, starting again every April.",
           "**Cancel** (owner only): the document keeps its number and shows CANCELLED. You can then issue a new one.",

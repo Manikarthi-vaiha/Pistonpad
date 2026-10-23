@@ -213,11 +213,12 @@ export default async function VehiclesReportPage({ searchParams }: PageProps<"/r
             <Card><CardHeader title="How buyers paid" /><div className="p-5"><BarList items={r.byMode.map((m) => ({ label: m.label, value: m.value, sub: `${m.n} bike${m.n === 1 ? "" : "s"}` }))} /></div></Card>
           </div>
           <Card className="mt-4">
-            <CardHeader title="Bikes sold" sub="Newest first" />
+            <CardHeader title="Bikes sold" sub="Newest first · click a bike to see its full detail" />
             <Table>
               <thead>
                 <tr>
-                  <th className={th}>Bike</th><th className={th}>Sold</th><th className={`${th} text-right`}>Cost</th>
+                  <th className={th}>Bike</th><th className={th}>Sold</th><th className={th}>Finance</th>
+                  <th className={`${th} text-right`}>Cost</th>
                   <th className={`${th} text-right`}>Sold for</th><th className={`${th} text-right`}>Profit</th><th className={`${th} text-right`}>Days</th>
                 </tr>
               </thead>
@@ -232,6 +233,15 @@ export default async function VehiclesReportPage({ searchParams }: PageProps<"/r
                       </Link>
                     </td>
                     <td className={td}><p className="whitespace-nowrap">{dateLabel(x.sold_on)}</p><p className="text-xs text-ink-3">{[x.sold_to, x.sold_payment_mode].filter(Boolean).join(" · ")}</p></td>
+                    <td className={td}>
+                      {x.buyer_finance_name ? (
+                        <div className="text-xs">
+                          <p className="font-semibold text-ink">{x.buyer_finance_name}</p>
+                          {x.buyer_down_payment != null && <p className="text-ink-3">Down: {rupees(x.buyer_down_payment)}</p>}
+                          {x.buyer_tenure_months && <p className="text-ink-3">{x.buyer_tenure_months}m{x.buyer_emi_amount ? ` · EMI ${rupees(x.buyer_emi_amount)}` : ""}</p>}
+                        </div>
+                      ) : <span className="text-xs text-ink-3">—</span>}
+                    </td>
                     <td className={`${td} text-right text-ink-2`} title={`Bought ${rupees(x.bought)} + repairs ${rupees(x.refurb)}${Number(x.loan) ? ` + loan ${rupees(x.loan)}` : ""}`}>{rupees(x.cost)}</td>
                     <td className={`${td} text-right font-semibold`}>{rupees(x.sold_price)}</td>
                     <td className={cx(td, "text-right font-semibold", Number(x.profit) < 0 ? "text-bad" : "text-good")}>{rupees(x.profit)}</td>

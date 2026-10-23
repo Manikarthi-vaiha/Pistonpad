@@ -36,6 +36,9 @@ export type VehicleDocInput = {
   vehicleId: number; kind: VehicleDocKind; date: string; time: string;
   partyName: string; partyPhone: string; partyAddress: string; partyIdProof: string;
   paymentMode: string; odometerKm: number | null; papers: string[]; notes: string; userId: number;
+  // Buyer's finance details (sale only)
+  buyerFinanceId?: number | null; buyerFinanceName?: string;
+  buyerDownPayment?: number | null; buyerTenureMonths?: number | null; buyerEmiAmount?: number | null;
 };
 
 /** "2026-10-23" + "16:35" in Indian time. */
@@ -91,6 +94,11 @@ export async function issueVehicleDoc(tx: Tx, input: VehicleDocInput) {
       price, paid_amount: paid, loan_amount: loan, loan_payer: hasLoan ? v.loan_paid_by : "", loan_financier: hasLoan ? v.hypothecation : "",
       payment_mode: input.paymentMode, odometer_km: input.odometerKm, bike: tx.json(bike), papers: input.papers, notes: input.notes,
       user_id: input.userId,
+      buyer_finance_id: input.buyerFinanceId ?? null,
+      buyer_finance_name: input.buyerFinanceName ?? "",
+      buyer_down_payment: input.buyerDownPayment ?? null,
+      buyer_tenure_months: input.buyerTenureMonths ?? null,
+      buyer_emi_amount: input.buyerEmiAmount ?? null,
     })}
     returning id, doc_no`;
   return doc;
@@ -104,6 +112,8 @@ export type VehicleDoc = {
   price: number; paid_amount: number; loan_amount: number; loan_payer: string; loan_financier: string;
   payment_mode: string; odometer_km: number | null; bike: BikeSnapshot; papers: string[]; notes: string;
   status: "issued" | "cancelled"; cancel_reason: string; created_by: string | null;
+  buyer_finance_id: number | null; buyer_finance_name: string;
+  buyer_down_payment: number | null; buyer_tenure_months: number | null; buyer_emi_amount: number | null;
 };
 export type DocShop = {
   shop_name: string; address: string; phone: string; email: string; gstin: string; logo: Buffer | null; logo_type: string | null; logo_version: number;
@@ -174,10 +184,20 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
   ] as [string, string][]).filter(([, v]) => v);
 
   const fin = doc.loan_financier || "the financier";
+  const buyerFin = doc.buyer_finance_name || "the finance company";
   const rows: [string, string][] = [];
+  const hasBuyerFinance = sale && doc.buyer_down_payment != null && Number(doc.buyer_down_payment) >= 0;
   if (sale) {
     rows.push(["Sale price", money(doc.price)]);
-    if (doc.loan_amount > 0 && doc.loan_payer === "buyer") {
+    if (hasBuyerFinance) {
+      const financed = doc.price - Number(doc.buyer_down_payment);
+      rows.push([`Down payment by buyer (${doc.payment_mode || "Cash"})`, money(Number(doc.buyer_down_payment))]);
+      rows.push([`Financed by ${buyerFin}`, money(financed)]);
+      if (doc.buyer_tenure_months) {
+        const emiStr = doc.buyer_emi_amount ? `EMI ≈ ${money(doc.buyer_emi_amount)}/month · ` : "";
+        rows.push([`Loan tenure`, `${doc.buyer_tenure_months} months · ${emiStr}${doc.buyer_tenure_months} instalments`]);
+      }
+    } else if (doc.loan_amount > 0 && doc.loan_payer === "buyer") {
       rows.push([`Paid by the buyer directly to ${fin} (closing the earlier owner's loan)`, money(doc.loan_amount)]);
       rows.push([`Paid to ${shop.shop_name}`, money(doc.paid_amount)]);
     }
@@ -192,7 +212,7 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
       rows.push(["Paid to the seller", money(doc.paid_amount)]);
     }
   }
-  if (doc.payment_mode) rows.push([sale ? "Paid by" : "Paid to the seller by", doc.payment_mode]);
+  if (!hasBuyerFinance && doc.payment_mode) rows.push([sale ? "Paid by" : "Paid to the seller by", doc.payment_mode]);
   const loanNote = !sale && doc.loan_amount > 0 && doc.loan_payer === "owner"
     ? `The seller will close the loan with ${fin} (${money(doc.loan_amount)}) and hand over the NOC.` : "";
 
@@ -219,4 +239,47 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
       : [{ label: "Seller's signature", name: doc.party_name }, { label: `For ${shop.shop_name}`, name: "Authorised signatory" }],
     shop: { name: shop.shop_name, address: shop.address, contact: [shop.phone && `Ph: ${shop.phone}`, shop.email].filter(Boolean).join(" · "), gstin: shop.gstin },
   };
+}
+
+export type VehicleDocRow = {
+  id: number; vehicle_id: number; kind: VehicleDocKind; doc_no: string; doc_date: string; party_name: string; party_phone: string;
+  price: number; status: string; reg_no: string; bike_name: string;
+};
+
+/**
+ * All bike documents, newest first. Searches the details printed on the documents themselves (person's name and
+ * phone, document number, vehicle number, bike), so a cancelled invoice or an RC-spelling of a name is still found.
+ */
+export async function searchVehicleDocs(f: { q?: string; kind?: string; status?: string; from?: string; to?: string; limit?: number }) {
+  const limit = Math.min(f.limit ?? 200, 500);
+  const conds = [sql`true`];
+  const words = (f.q ?? "").toLowerCase().trim().split(/\s+/).filter(Boolean).slice(0, 6);
+  if (words.length) {
+    const hay = sql`lower(d.doc_no || ' ' || d.party_name || ' ' || d.party_phone || ' ' || (d.bike->>'reg_no') || ' ' || (d.bike->>'make') || ' ' || (d.bike->>'model'))`;
+    const all = words.map((w) => sql`${hay} like ${"%" + w.replace(/[\\%_]/g, "\\$&") + "%"}`).reduce((a, c) => sql`${a} and ${c}`);
+    // "TN 76 AB 1234" typed with spaces still finds the stored TN76AB1234.
+    const reg = words.join("").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    conds.push(reg.length >= 4 ? sql`((${all}) or (d.bike->>'reg_no') like ${"%" + reg + "%"})` : all);
+  }
+  if (f.kind === "sale" || f.kind === "purchase") conds.push(sql`d.kind = ${f.kind}`);
+  if (f.status === "issued" || f.status === "cancelled") conds.push(sql`d.status = ${f.status}`);
+  if (f.from) conds.push(sql`d.doc_date >= ${f.from}`);
+  if (f.to) conds.push(sql`d.doc_date <= ${f.to}`);
+  const where = conds.reduce((a, c) => sql`${a} and ${c}`);
+  const [rows, [totals]] = await Promise.all([
+    sql<VehicleDocRow[]>`
+      select d.id, d.vehicle_id, d.kind, d.doc_no, to_char(d.doc_date, 'YYYY-MM-DD') as doc_date, d.party_name, d.party_phone,
+             d.price, d.status, d.bike->>'reg_no' as reg_no,
+             trim(concat_ws(' ', d.bike->>'make', d.bike->>'model', d.bike->>'variant')) as bike_name
+      from vehicle_invoices d where ${where}
+      order by d.doc_date desc, d.id desc limit ${limit + 1}`,
+    sql<{ n: number; sales: number; sales_n: number; purchases: number; purchases_n: number }[]>`
+      select count(*)::int as n,
+             coalesce(sum(price) filter (where kind = 'sale' and status = 'issued'), 0) as sales,
+             count(*) filter (where kind = 'sale' and status = 'issued')::int as sales_n,
+             coalesce(sum(price) filter (where kind = 'purchase' and status = 'issued'), 0) as purchases,
+             count(*) filter (where kind = 'purchase' and status = 'issued')::int as purchases_n
+      from vehicle_invoices d where ${where}`,
+  ]);
+  return { rows: rows.slice(0, limit), more: rows.length > limit, totals };
 }
