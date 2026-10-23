@@ -80,6 +80,15 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
     return Math.round(e);
   }, [financed, selectedFin, tenure]);
 
+  // Charges from the selected financier
+  const docCharge = selectedFin?.doc_charge != null ? Number(selectedFin.doc_charge) : null;
+  const processingFee = selectedFin?.processing_fee_pct != null && financed != null
+    ? Math.round(financed * Number(selectedFin.processing_fee_pct) / 100 * 100) / 100
+    : null;
+  const totalCharges = (docCharge ?? 0) + (processingFee ?? 0);
+
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-info/40 bg-info-soft p-4">
       <p className="text-[13px] font-semibold text-info">Finance / loan details</p>
@@ -106,13 +115,39 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
           </Select>
         </Field>
       </div>
-      {emi && <input type="hidden" name="buyerEmiAmount" value={String(emi)} />}
+
+      {/* Charges summary — shown when a financier with rates is selected */}
+      {selectedFin && (docCharge != null || processingFee != null) && (
+        <div className="rounded-lg border border-info/30 bg-white/50 dark:bg-white/5 px-4 py-3 text-[13px]">
+          <p className="mb-1.5 font-semibold text-ink-2">Finance charges (paid by buyer to {selectedFin.name})</p>
+          <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1">
+            {docCharge != null && docCharge > 0 && <>
+              <dt className="text-ink-3">Documentation charge</dt>
+              <dd className="text-right font-semibold">{fmt(docCharge)}</dd>
+            </>}
+            {processingFee != null && processingFee > 0 && <>
+              <dt className="text-ink-3">Processing fee ({selectedFin.processing_fee_pct}% of {financed != null ? `₹${financed.toLocaleString("en-IN")}` : "loan"})</dt>
+              <dd className="text-right font-semibold">{fmt(processingFee)}</dd>
+            </>}
+            {totalCharges > 0 && <>
+              <dt className="border-t border-info/20 pt-1 font-semibold text-ink">Total charges</dt>
+              <dd className="border-t border-info/20 pt-1 text-right font-bold text-ink">{fmt(totalCharges)}</dd>
+            </>}
+          </dl>
+        </div>
+      )}
+
       {financed != null && (
         <p className="text-[13px] text-ink-2">
           Loan of <b>₹{financed.toLocaleString("en-IN")}</b> from <b>{selectedFin?.name || "the finance company"}</b>
           {emi ? <> · EMI ≈ <b>₹{emi.toLocaleString("en-IN")}/month</b> for {tenure} months</> : ""}
         </p>
       )}
+
+      {/* Hidden inputs carry the calculated charge values to the server */}
+      {emi && <input type="hidden" name="buyerEmiAmount" value={String(emi)} />}
+      {docCharge != null && docCharge > 0 && <input type="hidden" name="buyerDocCharge" value={String(docCharge)} />}
+      {processingFee != null && processingFee > 0 && <input type="hidden" name="buyerProcessingFee" value={String(processingFee)} />}
     </div>
   );
 }

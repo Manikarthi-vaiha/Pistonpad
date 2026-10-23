@@ -243,12 +243,15 @@ const docFields = {
   papers: z.array(z.string().refine((k) => DOC_CHECKLIST.some((x) => x.key === k))).max(DOC_CHECKLIST.length),
   notes: text(300),
 };
+const optNum = () => z.union([z.literal(""), z.coerce.number().min(0)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional();
 const financeFields = {
   buyerFinanceId: z.union([z.literal(""), z.coerce.number().int().positive()]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
   buyerFinanceName: text(120),
-  buyerDownPayment: z.union([z.literal(""), z.coerce.number().min(0)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  buyerDownPayment: optNum(),
   buyerTenureMonths: z.union([z.literal(""), z.coerce.number().int().min(1).max(120)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
-  buyerEmiAmount: z.union([z.literal(""), z.coerce.number().min(0)]).transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  buyerEmiAmount: optNum(),
+  buyerDocCharge: optNum(),
+  buyerProcessingFee: optNum(),
 };
 const docFieldValues = (f: FormData) => ({
   time: str(f, "time"), address: str(f, "address"), idProof: str(f, "idProof"), odometerKm: strOrNull(f, "odometerKm"),
@@ -256,6 +259,7 @@ const docFieldValues = (f: FormData) => ({
   buyerFinanceId: str(f, "buyerFinanceId"), buyerFinanceName: str(f, "buyerFinanceName"),
   buyerDownPayment: str(f, "buyerDownPayment"), buyerTenureMonths: str(f, "buyerTenureMonths"),
   buyerEmiAmount: str(f, "buyerEmiAmount"),
+  buyerDocCharge: str(f, "buyerDocCharge"), buyerProcessingFee: str(f, "buyerProcessingFee"),
 });
 
 const saleSchema = z.object({
@@ -286,6 +290,7 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
         partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
         buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
         buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
+        buyerDocCharge: d.buyerDocCharge, buyerProcessingFee: d.buyerProcessingFee,
       });
     });
   } catch (e) {
@@ -331,6 +336,7 @@ export async function createVehicleDoc(vehicleId: number, kind: VehicleDocKind, 
         partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
         buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
         buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
+        buyerDocCharge: d.buyerDocCharge, buyerProcessingFee: d.buyerProcessingFee,
       });
     });
   } catch (e) {

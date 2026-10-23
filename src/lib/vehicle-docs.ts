@@ -39,6 +39,7 @@ export type VehicleDocInput = {
   // Buyer's finance details (sale only)
   buyerFinanceId?: number | null; buyerFinanceName?: string;
   buyerDownPayment?: number | null; buyerTenureMonths?: number | null; buyerEmiAmount?: number | null;
+  buyerDocCharge?: number | null; buyerProcessingFee?: number | null;
 };
 
 /** "2026-10-23" + "16:35" in Indian time. */
@@ -99,6 +100,8 @@ export async function issueVehicleDoc(tx: Tx, input: VehicleDocInput) {
       buyer_down_payment: input.buyerDownPayment ?? null,
       buyer_tenure_months: input.buyerTenureMonths ?? null,
       buyer_emi_amount: input.buyerEmiAmount ?? null,
+      buyer_doc_charge: input.buyerDocCharge ?? null,
+      buyer_processing_fee: input.buyerProcessingFee ?? null,
     })}
     returning id, doc_no`;
   return doc;
@@ -114,6 +117,7 @@ export type VehicleDoc = {
   status: "issued" | "cancelled"; cancel_reason: string; created_by: string | null;
   buyer_finance_id: number | null; buyer_finance_name: string;
   buyer_down_payment: number | null; buyer_tenure_months: number | null; buyer_emi_amount: number | null;
+  buyer_doc_charge: number | null; buyer_processing_fee: number | null;
 };
 export type DocShop = {
   shop_name: string; address: string; phone: string; email: string; gstin: string; logo: Buffer | null; logo_type: string | null; logo_version: number;
@@ -193,6 +197,10 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
       const financed = doc.price - Number(doc.buyer_down_payment);
       rows.push([`Down payment by buyer (${doc.payment_mode || "Cash"})`, money(Number(doc.buyer_down_payment))]);
       rows.push([`Financed by ${buyerFin}`, money(financed)]);
+      if (doc.buyer_doc_charge != null && Number(doc.buyer_doc_charge) > 0)
+        rows.push([`Documentation charge (paid to ${buyerFin})`, money(Number(doc.buyer_doc_charge))]);
+      if (doc.buyer_processing_fee != null && Number(doc.buyer_processing_fee) > 0)
+        rows.push([`Processing fee (paid to ${buyerFin})`, money(Number(doc.buyer_processing_fee))]);
       if (doc.buyer_tenure_months) {
         const emiStr = doc.buyer_emi_amount ? `EMI ≈ ${money(doc.buyer_emi_amount)}/month · ` : "";
         rows.push([`Loan tenure`, `${doc.buyer_tenure_months} months · ${emiStr}${doc.buyer_tenure_months} instalments`]);
