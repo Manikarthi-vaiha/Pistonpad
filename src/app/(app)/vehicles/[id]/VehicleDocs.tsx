@@ -53,48 +53,73 @@ export function DocFields({ who, nowTime, odometerKm, papers, address = "", idPr
 
 /**
  * Finance section shown on a SALE invoice when the buyer takes a loan.
- * Computes the financed amount and estimated EMI live in the browser.
+ * Total loan = (price − down payment) + doc charge + processing fee.
+ * EMI interest is calculated on the total loan amount.
  */
 export function FinanceSection({ financiers, salePrice }: { financiers: Financier[]; salePrice?: number }) {
   const [finId, setFinId] = useState("");
   const [downPayment, setDownPayment] = useState("");
   const [tenure, setTenure] = useState("24");
+  const [docChargeInput, setDocChargeInput] = useState("");
+  const [processingFeeInput, setProcessingFeeInput] = useState("");
 
   const selectedFin = useMemo(() => financiers.find((f) => String(f.id) === finId), [financiers, finId]);
   const price = salePrice ?? 0;
   const down = parseFloat(downPayment) || 0;
-  const financed = price > 0 && down >= 0 && down < price ? price - down : null;
+  const remainingLoan = price > 0 && down >= 0 && down < price ? price - down : null;
+
+  const docChargeNum = parseFloat(docChargeInput) || 0;
+  const processingFeeNum = parseFloat(processingFeeInput) || 0;
+  // Total loan = remaining loan + charges (both rolled into the financed amount)
+  const totalLoan = remainingLoan != null ? remainingLoan + docChargeNum + processingFeeNum : null;
+
+  // Pre-populate charge inputs when the financier selection changes
+  const handleFinancierChange = (newId: string) => {
+    setFinId(newId);
+    const fin = financiers.find((f) => String(f.id) === newId);
+    if (fin) {
+      setDocChargeInput(fin.doc_charge != null ? String(fin.doc_charge) : "");
+      const curDown = parseFloat(downPayment) || 0;
+      const curRemaining = price > 0 && curDown >= 0 && curDown < price ? price - curDown : 0;
+      if (fin.processing_fee_pct != null && curRemaining > 0) {
+        const pf = Math.round(curRemaining * Number(fin.processing_fee_pct) / 100 * 100) / 100;
+        setProcessingFeeInput(String(pf));
+      } else {
+        setProcessingFeeInput("");
+      }
+    } else {
+      setDocChargeInput("");
+      setProcessingFeeInput("");
+    }
+  };
 
   const emi = useMemo(() => {
-    if (!financed || !selectedFin?.interest_rate || !tenure) return null;
+    if (!totalLoan || !selectedFin?.interest_rate || !tenure) return null;
     const n = parseInt(tenure);
     const r = Number(selectedFin.interest_rate) / 100 / 12;
     let e: number;
     if (selectedFin.rate_type === "flat") {
-      e = (financed + financed * Number(selectedFin.interest_rate) / 100 * n / 12) / n;
+      e = (totalLoan + totalLoan * Number(selectedFin.interest_rate) / 100 * n / 12) / n;
     } else {
-      if (r === 0) e = financed / n;
-      else e = (financed * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+      if (r === 0) e = totalLoan / n;
+      else e = (totalLoan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
     }
     if (selectedFin.round_to > 0) e = Math.ceil(e / selectedFin.round_to) * selectedFin.round_to;
     return Math.round(e);
-  }, [financed, selectedFin, tenure]);
-
-  // Charges from the selected financier
-  const docCharge = selectedFin?.doc_charge != null ? Number(selectedFin.doc_charge) : null;
-  const processingFee = selectedFin?.processing_fee_pct != null && financed != null
-    ? Math.round(financed * Number(selectedFin.processing_fee_pct) / 100 * 100) / 100
-    : null;
-  const totalCharges = (docCharge ?? 0) + (processingFee ?? 0);
+  }, [totalLoan, selectedFin, tenure]);
 
   const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // Hint shows the default % calculation so user knows the suggested value
+  const procHint = selectedFin?.processing_fee_pct != null && remainingLoan != null
+    ? `Default: ${selectedFin.processing_fee_pct}% of ₹${remainingLoan.toLocaleString("en-IN")} = ₹${Math.round(remainingLoan * Number(selectedFin.processing_fee_pct) / 100).toLocaleString("en-IN")}`
+    : undefined;
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-info/40 bg-info-soft p-4">
       <p className="text-[13px] font-semibold text-info">Finance / loan details</p>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Finance company" className="col-span-2">
-          <Select name="buyerFinanceId" value={finId} onChange={(e) => setFinId(e.target.value)}>
+          <Select name="buyerFinanceId" value={finId} onChange={(e) => handleFinancierChange(e.target.value)}>
             <option value="">— Select or type below —</option>
             {financiers.filter((f) => f.active).map((f) => <option key={f.id} value={String(f.id)}>{f.name}</option>)}
           </Select>
@@ -105,7 +130,7 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
           </Field>
         )}
         {finId && <input type="hidden" name="buyerFinanceName" value={selectedFin?.name ?? ""} />}
-        <Field label="Down payment ₹" hint={financed != null ? `Financed: ₹${financed.toLocaleString("en-IN")}` : price > 0 ? "Enter down payment" : undefined}>
+        <Field label="Down payment ₹" hint={remainingLoan != null ? `Remaining loan: ₹${remainingLoan.toLocaleString("en-IN")}` : price > 0 ? "Enter down payment" : undefined}>
           <Input name="buyerDownPayment" inputMode="decimal" value={downPayment} onChange={(e) => setDownPayment(e.target.value)}
             placeholder={price > 0 ? `e.g. ${Math.round(price * 0.3).toLocaleString("en-IN")}` : "0"} />
         </Field>
@@ -114,40 +139,46 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
             {[6, 12, 18, 24, 30, 36, 48, 60, 72, 84].map((n) => <option key={n} value={String(n)}>{n} months</option>)}
           </Select>
         </Field>
+        <Field label="Documentation charge ₹" hint="Flat fee — edit if needed">
+          <Input name="buyerDocCharge" inputMode="decimal" value={docChargeInput}
+            onChange={(e) => setDocChargeInput(e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Processing fee ₹" hint={procHint ?? "Flat amount — edit if needed"}>
+          <Input name="buyerProcessingFee" inputMode="decimal" value={processingFeeInput}
+            onChange={(e) => setProcessingFeeInput(e.target.value)} placeholder="0" />
+        </Field>
       </div>
 
-      {/* Charges summary — shown when a financier with rates is selected */}
-      {selectedFin && (docCharge != null || processingFee != null) && (
+      {/* Total loan breakdown — shown once we have a remaining loan */}
+      {totalLoan != null && totalLoan > 0 && (
         <div className="rounded-lg border border-info/30 bg-white/50 dark:bg-white/5 px-4 py-3 text-[13px]">
-          <p className="mb-1.5 font-semibold text-ink-2">Finance charges (paid by buyer to {selectedFin.name})</p>
+          <p className="mb-1.5 font-semibold text-ink-2">Total loan breakdown</p>
           <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1">
-            {docCharge != null && docCharge > 0 && <>
+            {remainingLoan != null && <>
+              <dt className="text-ink-3">Remaining loan (price − down payment)</dt>
+              <dd className="text-right font-semibold">{fmt(remainingLoan)}</dd>
+            </>}
+            {docChargeNum > 0 && <>
               <dt className="text-ink-3">Documentation charge</dt>
-              <dd className="text-right font-semibold">{fmt(docCharge)}</dd>
+              <dd className="text-right font-semibold">{fmt(docChargeNum)}</dd>
             </>}
-            {processingFee != null && processingFee > 0 && <>
-              <dt className="text-ink-3">Processing fee ({selectedFin.processing_fee_pct}% of {financed != null ? `₹${financed.toLocaleString("en-IN")}` : "loan"})</dt>
-              <dd className="text-right font-semibold">{fmt(processingFee)}</dd>
+            {processingFeeNum > 0 && <>
+              <dt className="text-ink-3">Processing fee</dt>
+              <dd className="text-right font-semibold">{fmt(processingFeeNum)}</dd>
             </>}
-            {totalCharges > 0 && <>
-              <dt className="border-t border-info/20 pt-1 font-semibold text-ink">Total charges</dt>
-              <dd className="border-t border-info/20 pt-1 text-right font-bold text-ink">{fmt(totalCharges)}</dd>
-            </>}
+            <dt className="border-t border-info/20 pt-1 font-semibold text-ink">Total loan amount</dt>
+            <dd className="border-t border-info/20 pt-1 text-right font-bold text-ink">{fmt(totalLoan)}</dd>
           </dl>
+          {emi && (
+            <p className="mt-2 text-[12px] text-ink-3">
+              Interest on total loan · EMI ≈ <b className="text-ink">₹{emi.toLocaleString("en-IN")}/month</b> for {tenure} months
+            </p>
+          )}
         </div>
       )}
 
-      {financed != null && (
-        <p className="text-[13px] text-ink-2">
-          Loan of <b>₹{financed.toLocaleString("en-IN")}</b> from <b>{selectedFin?.name || "the finance company"}</b>
-          {emi ? <> · EMI ≈ <b>₹{emi.toLocaleString("en-IN")}/month</b> for {tenure} months</> : ""}
-        </p>
-      )}
-
-      {/* Hidden inputs carry the calculated charge values to the server */}
+      {/* Hidden input carries the calculated EMI to the server */}
       {emi && <input type="hidden" name="buyerEmiAmount" value={String(emi)} />}
-      {docCharge != null && docCharge > 0 && <input type="hidden" name="buyerDocCharge" value={String(docCharge)} />}
-      {processingFee != null && processingFee > 0 && <input type="hidden" name="buyerProcessingFee" value={String(processingFee)} />}
     </div>
   );
 }

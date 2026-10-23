@@ -194,16 +194,21 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
   if (sale) {
     rows.push(["Sale price", money(doc.price)]);
     if (hasBuyerFinance) {
-      const financed = doc.price - Number(doc.buyer_down_payment);
+      const remainingLoan = doc.price - Number(doc.buyer_down_payment);
+      const docCharge = doc.buyer_doc_charge != null ? Number(doc.buyer_doc_charge) : 0;
+      const processingFee = doc.buyer_processing_fee != null ? Number(doc.buyer_processing_fee) : 0;
+      const totalLoan = remainingLoan + docCharge + processingFee;
       rows.push([`Down payment by buyer (${doc.payment_mode || "Cash"})`, money(Number(doc.buyer_down_payment))]);
-      rows.push([`Financed by ${buyerFin}`, money(financed)]);
-      if (doc.buyer_doc_charge != null && Number(doc.buyer_doc_charge) > 0)
-        rows.push([`Documentation charge (paid to ${buyerFin})`, money(Number(doc.buyer_doc_charge))]);
-      if (doc.buyer_processing_fee != null && Number(doc.buyer_processing_fee) > 0)
-        rows.push([`Processing fee (paid to ${buyerFin})`, money(Number(doc.buyer_processing_fee))]);
+      rows.push([`Remaining loan (financed by ${buyerFin})`, money(remainingLoan)]);
+      if (docCharge > 0)
+        rows.push([`Documentation charge (paid to ${buyerFin})`, money(docCharge)]);
+      if (processingFee > 0)
+        rows.push([`Processing fee (paid to ${buyerFin})`, money(processingFee)]);
+      if (docCharge > 0 || processingFee > 0)
+        rows.push([`Total loan amount (financed by ${buyerFin})`, money(totalLoan)]);
       if (doc.buyer_tenure_months) {
         const emiStr = doc.buyer_emi_amount ? `EMI ≈ ${money(doc.buyer_emi_amount)}/month · ` : "";
-        rows.push([`Loan tenure`, `${doc.buyer_tenure_months} months · ${emiStr}${doc.buyer_tenure_months} instalments`]);
+        rows.push([`Loan tenure (interest on total loan)`, `${doc.buyer_tenure_months} months · ${emiStr}${doc.buyer_tenure_months} instalments`]);
       }
     } else if (doc.loan_amount > 0 && doc.loan_payer === "buyer") {
       rows.push([`Paid by the buyer directly to ${fin} (closing the earlier owner's loan)`, money(doc.loan_amount)]);

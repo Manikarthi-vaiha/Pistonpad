@@ -238,6 +238,8 @@ export default async function VehiclesReportPage({ searchParams }: PageProps<"/r
                         <div className="text-xs">
                           <p className="font-semibold text-ink">{x.buyer_finance_name}</p>
                           {x.buyer_down_payment != null && <p className="text-ink-3">Down: {rupees(x.buyer_down_payment)}</p>}
+                          {x.buyer_doc_charge != null && Number(x.buyer_doc_charge) > 0 && <p className="text-ink-3">Doc: {rupees(x.buyer_doc_charge)}</p>}
+                          {x.buyer_processing_fee != null && Number(x.buyer_processing_fee) > 0 && <p className="text-ink-3">Proc fee: {rupees(x.buyer_processing_fee)}</p>}
                           {x.buyer_tenure_months && <p className="text-ink-3">{x.buyer_tenure_months}m{x.buyer_emi_amount ? ` · EMI ${rupees(x.buyer_emi_amount)}` : ""}</p>}
                         </div>
                       ) : <span className="text-xs text-ink-3">—</span>}
