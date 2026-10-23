@@ -4,7 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
-  BarChart3, Banknote, Bike, Boxes, Building2, FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, PackagePlus, PieChart, Plus, ReceiptIndianRupee, ReceiptText, Settings, Upload, Users, Wallet, X,
+  BarChart3, Banknote, Bike, Boxes, Building2, ChevronLeft, ChevronRight,
+  FileText, LayoutDashboard, LifeBuoy, LogOut, Menu, PackagePlus, PieChart,
+  Plus, ReceiptIndianRupee, ReceiptText, Settings, Upload, Users, Wallet, X,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { cx } from "./ui";
@@ -54,7 +56,12 @@ const NAV: { section: string; dot?: string; items: Item[] }[] = [
 ];
 const ALL_HREFS = NAV.flatMap((g) => g.items.map((i) => i.href));
 
-export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; role: string }; shopName: string; logoUrl: string | null }) {
+export function Sidebar({
+  user, shopName, logoUrl, collapsed = false, onToggle,
+}: {
+  user: { name: string; role: string }; shopName: string; logoUrl: string | null;
+  collapsed?: boolean; onToggle?: () => void;
+}) {
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -69,12 +76,12 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
     return () => window.removeEventListener("keydown", onKey);
   }, [path, router]);
 
-  // The most specific matching link wins, so /reports/vehicles lights up "Bikes report", not "All reports".
   const matches = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
   const activeHref = ALL_HREFS.filter(matches).sort((a, b) => b.length - a.length)[0];
   const isActive = (href: string) => href === activeHref;
 
-  const nav = (
+  /** Full nav used in the mobile drawer and expanded desktop sidebar. */
+  const navFull = (
     <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
       {NAV.map((g) => {
         const items = g.items.filter((i) => !i.owner || user.role === "owner");
@@ -89,15 +96,12 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
                 const active = isActive(i.href);
                 return (
                   <li key={i.href}>
-                    <Link
-                      href={i.href}
-                      onClick={() => setOpen(false)}
+                    <Link href={i.href} onClick={() => setOpen(false)}
                       className={cx(
                         "group flex items-center gap-3 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
                         active ? "bg-side-active text-white" : "text-side-ink hover:bg-white/5 hover:text-white",
-                      )}
-                    >
-                      <i.icon className={cx("h-[18px] w-[18px]", active ? "text-primary" : "opacity-70 group-hover:opacity-100")} />
+                      )}>
+                      <i.icon className={cx("h-[18px] w-[18px] shrink-0", active ? "text-primary" : "opacity-70 group-hover:opacity-100")} />
                       <span className="flex-1">{i.label}</span>
                       {i.key ? <span className="rounded border border-white/10 px-1 font-mono text-[10px] text-side-ink/70">{i.key}</span> : null}
                     </Link>
@@ -111,21 +115,60 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
     </nav>
   );
 
+  /** Icon-only nav used in the collapsed desktop sidebar. */
+  const navCollapsed = (
+    <nav className="flex flex-1 flex-col gap-1 overflow-y-auto py-4">
+      {NAV.map((g) => {
+        const items = g.items.filter((i) => !i.owner || user.role === "owner");
+        if (!items.length) return null;
+        return (
+          <div key={g.section} className="flex flex-col gap-0.5 pb-3">
+            {g.dot && <span className={cx("mx-auto mb-1 h-1 w-4 rounded-full opacity-40", g.dot)} aria-hidden />}
+            {items.map((i) => {
+              const active = isActive(i.href);
+              return (
+                <Link key={i.href} href={i.href}
+                  title={i.label}
+                  className={cx(
+                    "group mx-1.5 flex items-center justify-center rounded-lg p-2.5 transition-colors",
+                    active ? "bg-side-active text-white" : "text-side-ink hover:bg-white/5 hover:text-white",
+                  )}>
+                  <i.icon className={cx("h-[18px] w-[18px]", active ? "text-primary" : "opacity-70 group-hover:opacity-100")} />
+                </Link>
+              );
+            })}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
   const footer = (
     <div className="border-t border-white/10 p-3">
-      <div className="flex items-center gap-3 rounded-lg px-2 py-2">
-        <div className="grid h-9 w-9 place-items-center rounded-full bg-primary/20 text-sm font-bold text-primary">
+      <div className={cx("flex items-center rounded-lg px-2 py-2", collapsed ? "justify-center gap-0" : "gap-3")}>
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/20 text-sm font-bold text-primary">
           {user.name.slice(0, 1).toUpperCase()}
         </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-white">{user.name}</p>
-          <p className="text-xs text-side-ink capitalize">{user.role}</p>
-        </div>
-        <form action={logout}>
-          <button className="rounded-md p-2 text-side-ink hover:bg-white/5 hover:text-white" title="Sign out" aria-label="Sign out">
-            <LogOut className="h-4 w-4" />
-          </button>
-        </form>
+        {!collapsed && (
+          <>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-white">{user.name}</p>
+              <p className="text-xs text-side-ink capitalize">{user.role}</p>
+            </div>
+            <form action={logout}>
+              <button className="rounded-md p-2 text-side-ink hover:bg-white/5 hover:text-white" title="Sign out" aria-label="Sign out">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </form>
+          </>
+        )}
+        {collapsed && (
+          <form action={logout} className="mt-2">
+            <button className="rounded-md p-2 text-side-ink hover:bg-white/5 hover:text-white" title="Sign out" aria-label="Sign out">
+              <LogOut className="h-4 w-4" />
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -141,21 +184,49 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
       </header>
 
       {/* Desktop sidebar */}
-      <aside className="no-print fixed inset-y-0 left-0 z-20 hidden w-64 flex-col bg-side lg:flex">
-        <div className="px-5 pt-5 pb-2">
-          <Logo tone="dark" />
-          <div className="mt-4 flex items-center gap-3 rounded-xl bg-white/[0.04] p-2.5 ring-1 ring-white/5">
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-full" />
-            ) : null}
-            <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold text-white">{shopName}</p>
-              <p className="text-[11px] text-side-ink/70">Your shop</p>
-            </div>
-          </div>
+      <aside className={cx(
+        "no-print fixed inset-y-0 left-0 z-20 hidden flex-col bg-side transition-[width] duration-200 lg:flex",
+        collapsed ? "w-16" : "w-64",
+      )}>
+        {/* Header: logo + shop info + collapse toggle */}
+        <div className={cx("relative flex items-start pt-5 pb-2", collapsed ? "flex-col items-center px-0" : "px-5")}>
+          {!collapsed && (
+            <>
+              <div className="flex-1 min-w-0">
+                <Logo tone="dark" />
+                <div className="mt-4 flex items-center gap-3 rounded-xl bg-white/[0.04] p-2.5 ring-1 ring-white/5">
+                  {logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={logoUrl} alt="" className="h-10 w-10 shrink-0 rounded-full" />
+                  ) : null}
+                  <div className="min-w-0">
+                    <p className="truncate text-[13px] font-semibold text-white">{shopName}</p>
+                    <p className="text-[11px] text-side-ink/70">Your shop</p>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+          {collapsed && logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" className="h-8 w-8 rounded-full mb-1" />
+          )}
+          {/* Collapse / expand toggle */}
+          {onToggle && (
+            <button
+              onClick={onToggle}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              className={cx(
+                "flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-side text-side-ink hover:bg-white/10 hover:text-white transition-colors",
+                collapsed ? "mt-2" : "absolute right-[-14px] top-5 z-10",
+              )}
+            >
+              {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
+            </button>
+          )}
         </div>
-        {nav}
+        {collapsed ? navCollapsed : navFull}
         {footer}
       </aside>
 
@@ -170,7 +241,7 @@ export function Sidebar({ user, shopName, logoUrl }: { user: { name: string; rol
                 <X className="h-5 w-5" />
               </button>
             </div>
-            {nav}
+            {navFull}
             {footer}
           </aside>
         </div>
