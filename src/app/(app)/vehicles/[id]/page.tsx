@@ -2,13 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { ArrowLeft, CheckCircle2, Circle, Pencil, Phone } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Circle, Pencil, Phone, ReceiptText } from "lucide-react";
 import { NumberPlate } from "@/components/NumberPlate";
 import { Badge, Card, CardHeader, cx, LinkButton, Notice } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { count, dateLabel, rupees } from "@/lib/format";
 import { CONDITIONS, daysLeft, DOC_CHECKLIST, EVENT_KINDS, INSURANCE_TYPES, LOAN_IN_COST, LOAN_PAID_BY, LOAN_STATUS, ordinal, PART_STATUS, RC_STATUS, RC_TYPES, transferCheck, parseReg, VEHICLE_STATUS } from "@/lib/regno";
+import { vehicleDocsFor } from "@/lib/vehicle-docs";
 import { getVehicle, getVehicleDetails } from "@/lib/vehicles";
+import { DocForm } from "./VehicleDocs";
 import {
   DeleteVehicle, EventForm, FineActions, FineForm, FixPart, OwnerForm, PartForm, RemoveEvent, RemoveOwner, RemovePart, SellForm, StatusButtons,
 } from "./VehicleForms";
@@ -21,7 +23,7 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
   const { id } = await params;
   const { saved } = await searchParams;
   if (!/^\d+$/.test(id)) notFound();
-  const [v, d] = await Promise.all([getVehicle(Number(id)), getVehicleDetails(Number(id))]);
+  const [v, d, docs] = await Promise.all([getVehicle(Number(id)), getVehicleDetails(Number(id)), vehicleDocsFor(Number(id))]);
   if (!v) notFound();
 
   const reg = parseReg(v.reg_no);
@@ -36,6 +38,10 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
   const accidents = d.events.filter((e) => e.kind === "accident").length;
   const damaged = d.parts.filter((p) => p.status === "damaged").length;
   const transfer = transferCheck(v, d.pendingFines);
+  // Shop time (the server may run in UTC) for the "time the bike changed hands" fields.
+  const nowTime = new Date().toLocaleTimeString("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+  const openSale = docs.find((x) => x.kind === "sale" && x.status === "issued");
+  const openPurchase = docs.find((x) => x.kind === "purchase" && x.status === "issued");
   const loan = LOAN_STATUS[v.loan_status] ?? LOAN_STATUS.none;
   const ownerPhoto = d.photos.find((p) => p.kind === "owner")?.id ?? null;
 
@@ -286,15 +292,57 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
                   {v.loan_paid_by === "buyer" && Number(v.loan_closure_amount) ? (
                     <p className="mt-1 text-xs text-ink-3">Buyer paid {rupees(v.loan_closure_amount)} to {v.hypothecation || "the financier"} directly · we received {rupees(Number(v.sold_price) - Number(v.loan_closure_amount))}</p>
                   ) : null}
+                  {openSale ? (
+                    <LinkButton size="sm" variant="primary" href={`/vehicles/${v.id}/documents/${openSale.id}`} className="mt-3">
+                      <ReceiptText className="h-3.5 w-3.5" /> Sale invoice {openSale.doc_no}
+                    </LinkButton>
+                  ) : null}
                 </div>
               </>
             ) : (
               <>
                 <CardHeader title="Sell this bike" sub="Records the buyer and closes the bike" />
                 <div className="p-5"><SellForm vehicleId={v.id} ourPrice={v.our_price != null ? Number(v.our_price) : null} minPrice={v.min_price != null ? Number(v.min_price) : null}
-                  buyerLoan={v.loan_paid_by === "buyer" && v.loan_status !== "none" ? { amount: Number(v.loan_closure_amount ?? 0), financier: v.hypothecation } : null} /></div>
+                  buyerLoan={v.loan_paid_by === "buyer" && v.loan_status !== "none" ? { amount: Number(v.loan_closure_amount ?? 0), financier: v.hypothecation } : null}
+                  nowTime={nowTime} odometerKm={v.odometer_km} papers={v.docs_in_hand} /></div>
               </>
             )}
+          </Card>
+
+          <Card>
+            <CardHeader title="Invoices and receipts" sub="Documents with the seller's and buyer's details, to print or share" />
+            {docs.length ? (
+              <ul className="divide-y divide-line">
+                {docs.map((x) => (
+                  <li key={x.id}>
+                    <Link href={`/vehicles/${v.id}/documents/${x.id}`} className="flex items-center justify-between gap-3 px-5 py-3 text-sm hover:bg-surface-2">
+                      <span className="min-w-0">
+                        <span className="block font-medium">{x.kind === "sale" ? "Sale invoice" : "Purchase receipt"} <span className="font-mono text-[12.5px] text-primary">{x.doc_no}</span></span>
+                        <span className="block truncate text-xs text-ink-3">{dateLabel(x.doc_date)} · {x.kind === "sale" ? "to" : "from"} {x.party_name}</span>
+                      </span>
+                      {x.status === "cancelled" ? <Badge tone="bad">Cancelled</Badge> : <span className="num shrink-0 font-semibold">{rupees(x.price)}</span>}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className={cx("flex flex-wrap gap-2 px-5 py-4", docs.length && "border-t border-line")}>
+              {!openPurchase ? (
+                <DocForm vehicleId={v.id} kind="purchase" nowTime={nowTime}
+                  summary={v.purchase_price != null
+                    ? `From ${v.current_owner || "the owner"} for ${rupees(v.purchase_price)}${LOAN_IN_COST.includes(v.loan_paid_by) && v.loan_status !== "none" && Number(v.loan_closure_amount) ? ` + ${rupees(v.loan_closure_amount)} loan with ${v.hypothecation || "the financier"}` : ""}. To change the amounts, edit the bike's prices.`
+                    : "Enter what you paid for the bike (Edit → Prices) before issuing a purchase receipt."}
+                  defaults={{ date: v.purchase_date ?? "", party: v.rc_owner_name || v.current_owner, phone: v.owner_phone, address: v.owner_address,
+                    idProof: v.owner_id_proof, mode: "Cash", odometerKm: v.odometer_km, papers: v.docs_in_hand }} />
+              ) : null}
+              {v.status === "sold" && !openSale ? (
+                <DocForm vehicleId={v.id} kind="sale" nowTime={nowTime}
+                  summary={`To ${v.sold_to} for ${rupees(v.sold_price)}. Details below print on the invoice.`}
+                  defaults={{ date: v.sold_on ?? "", party: v.sold_to, phone: v.sold_phone, address: v.sold_address, idProof: v.sold_id_proof,
+                    mode: v.sold_payment_mode, odometerKm: v.odometer_km, papers: v.docs_in_hand }} />
+              ) : null}
+              {openPurchase && (v.status !== "sold" || openSale) ? <p className="text-xs text-ink-3">{v.status === "sold" ? "Both documents are issued." : "The sale invoice is created when you mark the bike as sold."}</p> : null}
+            </div>
           </Card>
 
           <Card>

@@ -11,6 +11,7 @@ import {
   addEvent, addFine, addOwner, addPart, deleteEvent, deleteFine, deleteOwner, deletePart, deleteVehicle, fixPart, markSold, setFineStatus, setVehicleStatus,
   type VehicleState,
 } from "../actions";
+import { DocFields } from "./VehicleDocs";
 
 type Action = (id: number, s: VehicleState, f: FormData) => Promise<VehicleState>;
 
@@ -96,9 +97,11 @@ export function OwnerForm({ vehicleId, nextNo }: { vehicleId: number; nextNo: nu
   );
 }
 
-export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan }: {
+export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, odometerKm, papers }: {
   vehicleId: number; ourPrice: number | null; minPrice: number | null; buyerLoan: { amount: number; financier: string } | null;
+  nowTime: string; odometerKm: number | null; papers: string[];
 }) {
+  // On success the server action redirects to the new sale invoice.
   const [state, run, pending] = useActionState<VehicleState, FormData>(markSold.bind(null, vehicleId), {});
   const [price, setPrice] = useState(ourPrice != null ? String(ourPrice) : "");
   const below = minPrice != null && Number(price) > 0 && Number(price) < minPrice;
@@ -115,6 +118,8 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan }: {
           <Select name="mode" defaultValue="Cash">{BIKE_PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}</Select>
         </Field>
       </div>
+      <p className="-mb-1 border-t border-line pt-3 text-[11.5px] font-semibold tracking-wider text-ink-3 uppercase">For the sale invoice</p>
+      <DocFields who="Buyer" nowTime={nowTime} odometerKm={odometerKm} papers={papers} papersLabel="Papers handed over" />
       {buyerLoan && buyerLoan.amount ? (
         <Notice tone="info">
           The buyer pays ₹{buyerLoan.amount.toLocaleString("en-IN")} to {buyerLoan.financier || "the financier"} directly.
@@ -122,7 +127,7 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan }: {
         </Notice>
       ) : null}
       {state.error ? <Notice tone="bad">{state.error}</Notice> : null}
-      <Button variant="primary" disabled={pending}>{pending ? "Saving…" : "Mark as sold"}</Button>
+      <Button variant="primary" disabled={pending}>{pending ? "Saving…" : "Mark as sold and create invoice"}</Button>
     </form>
   );
 }
@@ -183,7 +188,10 @@ export function DeleteVehicle({ vehicleId, reg }: { vehicleId: number; reg: stri
   const [pending, start] = useTransition();
   return (
     <Button size="sm" variant="danger" disabled={pending}
-      onClick={() => { if (confirm(`Delete ${reg} with all its owners, fines and history? This can't be undone.`)) start(() => deleteVehicle(vehicleId)); }}>
+      onClick={() => {
+        if (!confirm(`Delete ${reg} with all its owners, fines and history? This can't be undone.`)) return;
+        start(async () => { const r = await deleteVehicle(vehicleId); if (r?.error) alert(r.error); });
+      }}>
       <Trash2 className="h-3.5 w-3.5" /> Delete
     </Button>
   );

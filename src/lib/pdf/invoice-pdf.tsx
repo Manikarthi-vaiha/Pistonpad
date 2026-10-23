@@ -1,20 +1,14 @@
 import "server-only";
-import { Document, Font, Image, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Image, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { sql } from "../db";
 import { GST_STATES } from "../format";
 import { rupeesInWords } from "../words";
-import { NOTO_400, NOTO_700, NOTO_DEVA_400, NOTO_DEVA_700 } from "./fonts.generated";
-
-// Noto Sans for text; the Devanagari face supplies the ₹ sign as a fallback.
-const woff = (b64: string) => `data:font/woff;base64,${b64}`;
-Font.register({ family: "Noto", fonts: [{ src: woff(NOTO_400) }, { src: woff(NOTO_700), fontWeight: 700 }] });
-Font.register({ family: "NotoDeva", fonts: [{ src: woff(NOTO_DEVA_400) }, { src: woff(NOTO_DEVA_700), fontWeight: 700 }] });
-Font.registerHyphenationCallback((w) => [w]);
+import { PDF_FONT } from "./fonts";
 
 const INK = "#0f1a17", MUTED = "#5b6b66", LINE = "#d5ddd9", PRIMARY = "#0b6e4f", SOFT = "#f2f6f4", BAD = "#c0362c";
 
 const s = StyleSheet.create({
-  page: { paddingTop: 36, paddingBottom: 48, paddingHorizontal: 36, fontFamily: ["Noto", "NotoDeva"] as unknown as string, fontSize: 9, color: INK },
+  page: { paddingTop: 36, paddingBottom: 48, paddingHorizontal: 36, fontFamily: PDF_FONT, fontSize: 9, color: INK },
   row: { flexDirection: "row" },
   header: { flexDirection: "row", justifyContent: "space-between", paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: INK },
   shopName: { fontSize: 17, fontWeight: 700 },

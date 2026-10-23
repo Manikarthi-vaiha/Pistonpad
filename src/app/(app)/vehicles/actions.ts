@@ -8,6 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { dateLabel } from "@/lib/format";
 import { sql } from "@/lib/db";
+import { DocError, issueVehicleDoc, type VehicleDocKind } from "@/lib/vehicle-docs";
 import { DOC_CHECKLIST, EVENT_KINDS, INSURANCE_TYPES, normalizeReg, parseReg, PHOTO_KINDS } from "@/lib/regno";
 
 type Tx = TransactionSql<Record<string, unknown>>;
@@ -220,34 +221,127 @@ export async function deleteOwner(vehicleId: number, ownerId: number) {
 /* ---------- Status & sale ---------- */
 export async function setVehicleStatus(vehicleId: number, status: "in_stock" | "reserved" | "in_service") {
   await requireUser();
-  await sql`update vehicles set status = ${status}, sold_price = null, sold_on = null, sold_to = '', sold_phone = '', sold_payment_mode = '', updated_at = now()
-            where id = ${vehicleId}`;
+  await sql.begin(async (tx) => {
+    const [v] = await tx<{ status: string }[]>`select status from vehicles where id = ${vehicleId} for update`;
+    await tx`update vehicles set status = ${status}, sold_price = null, sold_on = null, sold_to = '', sold_phone = '', sold_payment_mode = '',
+             sold_address = '', sold_id_proof = '', updated_at = now()
+             where id = ${vehicleId}`;
+    // Undoing a sale cancels its invoice; the number stays used so the series has no gaps.
+    if (v?.status === "sold") {
+      await tx`update vehicle_invoices set status = 'cancelled', cancel_reason = 'Sale undone'
+               where vehicle_id = ${vehicleId} and kind = 'sale' and status = 'issued'`;
+    }
+  });
   touch(vehicleId);
 }
+
+/** Fields printed on a sale invoice or purchase receipt, besides the names and money. */
+const docFields = {
+  time: z.string().regex(/^\d{2}:\d{2}$/, "Choose the time."),
+  address: text(300), idProof: text(60),
+  odometerKm: int(0, 2_000_000),
+  papers: z.array(z.string().refine((k) => DOC_CHECKLIST.some((x) => x.key === k))).max(DOC_CHECKLIST.length),
+  notes: text(300),
+};
+const docFieldValues = (f: FormData) => ({
+  time: str(f, "time"), address: str(f, "address"), idProof: str(f, "idProof"), odometerKm: strOrNull(f, "odometerKm"),
+  papers: [...new Set(f.getAll("papers").map(String))], notes: str(f, "docNotes"),
+});
 
 const saleSchema = z.object({
   price: z.coerce.number().positive("Enter the selling price.").max(100_000_000),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the sale date."),
   buyer: z.string().trim().min(2, "Enter the buyer's name.").max(120), phone: text(20),
   mode: z.string().refine((m) => BIKE_PAYMENT_MODES.includes(m), "Choose how the buyer paid."),
+  ...docFields,
 });
+/** Marks the bike sold and issues its numbered sale invoice in the same step. */
 export async function markSold(vehicleId: number, _: VehicleState, f: FormData): Promise<VehicleState> {
   const user = await requireUser();
-  const r = saleSchema.safeParse({ price: strOrNull(f, "price"), date: str(f, "date"), buyer: str(f, "buyer"), phone: str(f, "phone"), mode: str(f, "mode") });
+  const r = saleSchema.safeParse({
+    price: strOrNull(f, "price"), date: str(f, "date"), buyer: str(f, "buyer"), phone: str(f, "phone"), mode: str(f, "mode"), ...docFieldValues(f),
+  });
   if (!r.success) return { error: r.error.issues[0]?.message ?? "Check the sale details." };
   const d = r.data;
-  await sql.begin(async (tx) => {
-    await tx`update vehicles set status = 'sold', sold_price = ${d.price}, sold_on = ${d.date}, sold_to = ${d.buyer}, sold_phone = ${d.phone},
-             sold_payment_mode = ${d.mode}, updated_at = now()
-             where id = ${vehicleId}`;
-    await tx`insert into vehicle_events ${tx({ vehicle_id: vehicleId, event_date: d.date, kind: "sale", title: `Sold to ${d.buyer} · paid by ${d.mode}`, cost: 0, user_id: user.uid })}`;
-  });
+  let doc: { id: number; doc_no: string };
+  try {
+    doc = await sql.begin(async (tx) => {
+      await tx`update vehicles set status = 'sold', sold_price = ${d.price}, sold_on = ${d.date}, sold_to = ${d.buyer}, sold_phone = ${d.phone},
+               sold_payment_mode = ${d.mode}, sold_address = ${d.address}, sold_id_proof = ${d.idProof},
+               odometer_km = greatest(coalesce(odometer_km, 0), coalesce(${d.odometerKm}::int, 0)), updated_at = now()
+               where id = ${vehicleId}`;
+      await tx`insert into vehicle_events ${tx({ vehicle_id: vehicleId, event_date: d.date, kind: "sale", title: `Sold to ${d.buyer} · paid by ${d.mode}`, cost: 0, user_id: user.uid })}`;
+      return issueVehicleDoc(tx, {
+        vehicleId, kind: "sale", date: d.date, time: d.time, partyName: d.buyer, partyPhone: d.phone, partyAddress: d.address,
+        partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
+      });
+    });
+  } catch (e) {
+    if (e instanceof DocError) return { error: e.message };
+    console.error(e);
+    return { error: "Could not save the sale. Please try again." };
+  }
   touch(vehicleId);
-  return { ok: "Marked as sold.", key: Date.now() };
+  // Straight to the new invoice, ready to print or share. (redirect() must run outside the try.)
+  redirect(`/vehicles/${vehicleId}/documents/${doc.id}?new=1`);
 }
 
-export async function deleteVehicle(vehicleId: number) {
+/* ---------- Sale invoices and purchase receipts ---------- */
+const docSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the date."),
+  party: z.string().trim().min(2, "Enter the name.").max(120), phone: text(20),
+  mode: text(20),
+  ...docFields,
+});
+
+/** Issues a sale invoice (for a bike sold before invoices existed) or a purchase receipt from the previous owner. */
+export async function createVehicleDoc(vehicleId: number, kind: VehicleDocKind, _: VehicleState, f: FormData): Promise<VehicleState> {
+  const user = await requireUser();
+  const r = docSchema.safeParse({ date: str(f, "date"), party: str(f, "party"), phone: str(f, "phone"), mode: str(f, "mode"), ...docFieldValues(f) });
+  if (!r.success) return { error: r.error.issues[0]?.message ?? "Check the details." };
+  const d = r.data;
+  let doc: { id: number; doc_no: string };
+  try {
+    doc = await sql.begin(async (tx) => {
+      const [open] = await tx<{ doc_no: string }[]>`
+        select doc_no from vehicle_invoices where vehicle_id = ${vehicleId} and kind = ${kind} and status = 'issued' limit 1`;
+      if (open) throw new DocError(`${open.doc_no} is already issued for this bike. Cancel it first to issue a new one.`);
+      if (kind === "purchase") {
+        // Remember the seller's details on the bike too.
+        await tx`update vehicles set owner_id_proof = ${d.idProof},
+                 owner_address = case when owner_address = '' then ${d.address} else owner_address end, updated_at = now()
+                 where id = ${vehicleId}`;
+      } else {
+        await tx`update vehicles set sold_address = ${d.address}, sold_id_proof = ${d.idProof}, updated_at = now() where id = ${vehicleId}`;
+      }
+      return issueVehicleDoc(tx, {
+        vehicleId, kind, date: d.date, time: d.time, partyName: d.party, partyPhone: d.phone, partyAddress: d.address,
+        partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
+      });
+    });
+  } catch (e) {
+    if (e instanceof DocError) return { error: e.message };
+    console.error(e);
+    return { error: "Could not issue the document. Please try again." };
+  }
+  touch(vehicleId);
+  redirect(`/vehicles/${vehicleId}/documents/${doc.id}?new=1`);
+}
+
+/** Owner only. The document keeps its number and shows CANCELLED. */
+export async function cancelVehicleDoc(vehicleId: number, docId: number, reason: string): Promise<VehicleState> {
   await requireUser("owner");
+  await sql`update vehicle_invoices set status = 'cancelled', cancel_reason = ${reason.trim().slice(0, 200) || "Cancelled"}
+            where id = ${docId} and vehicle_id = ${vehicleId} and status = 'issued'`;
+  touch(vehicleId);
+  revalidatePath(`/vehicles/${vehicleId}/documents/${docId}`);
+  return { ok: "Cancelled." };
+}
+
+export async function deleteVehicle(vehicleId: number): Promise<VehicleState> {
+  await requireUser("owner");
+  const [doc] = await sql<{ doc_no: string }[]>`select doc_no from vehicle_invoices where vehicle_id = ${vehicleId} limit 1`;
+  if (doc) return { error: `This bike has invoices or receipts (${doc.doc_no}), so it can't be deleted. Issued documents are kept for your records.` };
   await sql`delete from vehicles where id = ${vehicleId}`;
   revalidatePath("/vehicles");
   redirect("/vehicles?deleted=1");

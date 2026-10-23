@@ -378,7 +378,8 @@ export const en: HelpLang = {
         { type: "steps", items: [
           "Open the bike. Use **Mark reserved** when a customer pays an advance, and **Mark in service** while it is at the mechanic.",
           "Under **Sell this bike**, enter the sale price, date, buyer's name and phone, and how they paid: Cash, UPI, Bank, Card, Cheque or **Finance** (the buyer's loan company pays you).",
-          "Tap **Mark as sold**. The sale is added to the history and the money appears in Money received.",
+          "Under **For the sale invoice**, check the delivery time, the buyer's address and ID proof, the odometer and the papers handed over.",
+          "Tap **Mark as sold and create invoice**. The sale is added to the history, the money appears in Money received, and the numbered **sale invoice** opens, ready to print or share.",
         ] },
         { type: "example", title: "Profit on a sold bike", lines: [
           { label: "Sold for", value: "₹42,000" },
@@ -391,6 +392,46 @@ export const en: HelpLang = {
       ],
     },
 
+    {
+      id: "bike-docs",
+      group: "bikes",
+      title: "Bike sale invoices and purchase receipts",
+      summary: "Documents with the seller's and buyer's details, to print, sign and share.",
+      blocks: [
+        { type: "p", text: "Every used bike can have two documents. Both show the **seller and the buyer**, the bike, the money, the **date and time the bike changed hands**, the papers, the terms, and spaces for both signatures." },
+        { type: "table", head: ["Document", "Seller → buyer", "Number", "How it's made"], rows: [
+          ["Bike sale invoice", "Your shop → the customer", "BS/26-27/0001", "Automatically when you mark the bike sold"],
+          ["Bike purchase receipt", "Previous owner → your shop", "BP/26-27/0001", "Bike page → Invoices and receipts → Create purchase receipt"],
+        ] },
+        { type: "steps", items: [
+          "Open the bike and find **Invoices and receipts**.",
+          "Tap **Create purchase receipt**. Check the seller's name exactly as on the RC, phone, address and ID proof.",
+          "Set the handover time, how you paid the seller, the odometer and the papers you received.",
+          "Tap **Issue purchase receipt**. It opens ready to print; ask the seller to sign it.",
+        ] },
+        { type: "example", title: "Purchase receipt when the shop clears the seller's loan", lines: [
+          { label: "Paid to the seller", value: "₹1,40,000" },
+          { label: "Paid by the shop to Bajaj Finance to close the seller's loan", value: "₹42,000", kind: "plus" },
+          { label: "Total deal value", value: "₹1,82,000", kind: "total" },
+        ] },
+        { type: "example", title: "Sale invoice when the buyer clears the earlier owner's loan", lines: [
+          { label: "Sale price", value: "₹95,000" },
+          { label: "Paid by the buyer directly to Shriram Finance", value: "₹18,500", kind: "muted" },
+          { label: "Paid to the shop", value: "₹76,500", kind: "muted" },
+          { label: "Total sale value", value: "₹95,000", kind: "total" },
+        ] },
+        { type: "list", items: [
+          "**Print**, **Share PDF** (on a phone it sends the file), **WhatsApp** (sends a link to the PDF) or download the **PDF**.",
+          "Numbers run without gaps for each financial year, starting again every April.",
+          "**Cancel** (owner only): the document keeps its number and shows CANCELLED. You can then issue a new one.",
+          "**Undo sale** cancels that bike's sale invoice automatically.",
+          "Bikes sold before invoices existed get a **Create sale invoice** button.",
+          "A bike with invoices or receipts cannot be deleted; the documents are kept for your records.",
+        ] },
+        { type: "tip", text: "The amounts come from the bike record. To change an amount, correct the bike's prices first, then cancel the document and issue a new one." },
+        { type: "warn", text: "Enter the **real** delivery or handover time: from that moment, fines and accidents are the new owner's responsibility. For ID proof, write only the last 4 digits (Aadhaar ••••1234), because the PDF link can be forwarded." },
+      ],
+    },
     /* ------------------------------------------------------------------ */
     {
       id: "expenses",
