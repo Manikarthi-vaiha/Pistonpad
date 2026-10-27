@@ -228,15 +228,35 @@ function Trigger({ label, placeholder, empty, onClick, open, onClear, ariaLabel,
 }
 
 /* ------------------------------------------------------------------ */
-/* Single date                                                         */
+/* Single date — supports both calendar picker and typed DD/MM/YYYY   */
 /* ------------------------------------------------------------------ */
-export function DatePicker({ name, value, defaultValue, onChange, max, min, ariaLabel, className, placeholder = "Choose a date" }: {
+
+/** Convert ISO "YYYY-MM-DD" → display "DD/MM/YYYY" */
+const toDisplay = (iso: string) => {
+  if (!valid(iso)) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+};
+
+/** Parse a user-typed string into ISO. Accepts DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD. */
+const parseTyped = (s: string): string | null => {
+  s = s.trim();
+  const m1 = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m1) {
+    const iso = `${m1[3]}-${m1[2].padStart(2, "0")}-${m1[1].padStart(2, "0")}`;
+    return valid(iso) ? iso : null;
+  }
+  return valid(s) ? s : null;
+};
+
+export function DatePicker({ name, value, defaultValue, onChange, max, min, ariaLabel, className, placeholder = "DD/MM/YYYY" }: {
   name?: string; value?: string; defaultValue?: string; onChange?: (v: string) => void;
   max?: string; min?: string; ariaLabel?: string; className?: string; placeholder?: string;
 }) {
   const [inner, setInner] = useState(defaultValue ?? "");
   const current = value ?? inner;
   const { open, setOpen, root, panel, place } = usePopover();
+  const [text, setText] = useState(() => toDisplay(defaultValue ?? ""));
   const start = valid(current) ? current : max && todayIso() > max ? max : todayIso();
   const [view, setView] = useState(() => [parse(start).getFullYear(), parse(start).getMonth()] as const);
   const [focus, setFocus] = useState(start);
@@ -244,13 +264,39 @@ export function DatePicker({ name, value, defaultValue, onChange, max, min, aria
   const gridId = useId();
 
   const disabled = (s: string) => (!!max && s > max) || (!!min && s < min);
-  const set = (s: string) => { if (value === undefined) setInner(s); onChange?.(s); };
+
+  const set = (s: string) => {
+    if (value === undefined) setInner(s);
+    onChange?.(s);
+    setText(toDisplay(s));
+  };
+
   const openAt = () => {
     const s = valid(current) ? current : start;
     setView([parse(s).getFullYear(), parse(s).getMonth()]); setFocus(s); setJump(false); setOpen(!open);
   };
 
-  // Keyboard navigation: move focus, switching month when it leaves the visible one.
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const t = e.target.value;
+    setText(t);
+    if (t === "") { if (value === undefined) setInner(""); onChange?.(""); return; }
+    const iso = parseTyped(t);
+    if (iso && !disabled(iso)) { if (value === undefined) setInner(iso); onChange?.(iso); }
+  };
+
+  const handleBlur = () => {
+    // Normalise text to DD/MM/YYYY on blur; revert if unparseable
+    const iso = parseTyped(text);
+    if (iso && !disabled(iso)) { setText(toDisplay(iso)); if (value === undefined) setInner(iso); onChange?.(iso); }
+    else if (!text.trim()) { setText(""); if (value === undefined) setInner(""); onChange?.(""); }
+    else setText(toDisplay(current)); // revert to last good value
+  };
+
+  // Sync display text when controlled value changes from outside
+  useEffect(() => {
+    if (value !== undefined) setText(toDisplay(value));
+  }, [value]);
+
   const moveFocus = (s: string) => {
     const d = parse(s);
     if (d.getFullYear() !== view[0] || d.getMonth() !== view[1]) setView([d.getFullYear(), d.getMonth()]);
@@ -267,8 +313,36 @@ export function DatePicker({ name, value, defaultValue, onChange, max, min, aria
   return (
     <div ref={root} className={cx("relative", className)}>
       {name ? <input type="hidden" name={name} value={current} /> : null}
-      <Trigger label={valid(current) ? formatDate(current) : ""} placeholder={placeholder}
-        empty={!valid(current)} onClick={openAt} open={open} ariaLabel={ariaLabel} />
+
+      {/* Editable trigger: text input + calendar icon */}
+      <div className={cx(
+        "flex items-center gap-2 rounded-lg border border-line-2 bg-surface px-3 text-sm text-ink transition-colors",
+        "focus-within:border-primary focus-within:ring-4 focus-within:ring-[var(--ring)]",
+        open && "border-primary ring-4 ring-[var(--ring)]",
+      )}>
+        <button type="button" data-trigger onClick={openAt} aria-haspopup="dialog" aria-expanded={open}
+          aria-label={ariaLabel ? `Open calendar for ${ariaLabel}` : "Open calendar"}
+          tabIndex={-1}
+          className="shrink-0 text-ink-3 hover:text-primary transition-colors">
+          <CalendarDays className="h-4 w-4" />
+        </button>
+        <input
+          type="text"
+          value={text}
+          onChange={handleTextChange}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          aria-label={ariaLabel}
+          className="num h-10 min-w-0 flex-1 bg-transparent outline-none placeholder:text-ink-3"
+        />
+        {valid(current) ? (
+          <button type="button" onClick={() => { set(""); setText(""); }} aria-label="Clear date"
+            className="shrink-0 text-ink-3 hover:text-ink transition-colors">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        ) : null}
+      </div>
+
       {open ? (
         <Panel refEl={panel} place={place} label={ariaLabel ?? "Choose date"}>
           {jump ? (
