@@ -32,7 +32,7 @@ export function LinkButton({ variant, size, className, ...p }: ComponentProps<ty
 export const inputClass =
   "h-10 w-full min-w-0 rounded-lg border border-line-2 bg-surface px-3 text-sm text-ink placeholder:text-ink-3 focus:border-primary focus:outline-none focus:ring-4 focus:ring-[var(--ring)] disabled:bg-surface-2";
 
-export function Field({ label, hint, error, children, className }: { label: string; hint?: ReactNode; error?: string; children: ReactNode; className?: string }) {
+export function Field({ label, hint, error, children, className }: { label: ReactNode; hint?: ReactNode; error?: string; children: ReactNode; className?: string }) {
   return (
     <label className={cx("flex min-w-0 flex-col gap-1.5", className)}>
       <span className="text-[13px] font-medium text-ink-2">{label}</span>

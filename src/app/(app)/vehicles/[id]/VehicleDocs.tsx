@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
-import { Ban, Check, FileDown, Loader2, MessageCircle, Printer, Share2 } from "lucide-react";
+import { Ban, Check, FileDown, Info, Loader2, MessageCircle, Printer, Share2 } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
 import { Button, cx, Field, Input, Notice, Select } from "@/components/ui";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
@@ -65,6 +65,7 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
   const [interestRate, setInterestRate] = useState("");
   const [rateType, setRateType] = useState<"reducing" | "flat">("reducing");
   const [roundTo, setRoundTo] = useState("0");
+  const [showRateInfo, setShowRateInfo] = useState(false);
 
   const selectedFin = useMemo(() => financiers.find((f) => String(f.id) === finId), [financiers, finId]);
   const price = salePrice ?? 0;
@@ -146,12 +147,89 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
           <Input name="buyerInterestRate" inputMode="decimal" value={interestRate}
             onChange={(e) => setInterestRate(e.target.value)} placeholder="e.g. 18" />
         </Field>
-        <Field label="Rate type">
+        <Field label={
+          <span className="flex items-center gap-1.5">
+            Rate type
+            <button type="button" onClick={() => setShowRateInfo((v) => !v)}
+              className="text-ink-3 hover:text-primary transition-colors" aria-label="What is rate type?">
+              <Info className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        }>
           <Select name="buyerRateType" value={rateType} onChange={(e) => setRateType(e.target.value as "reducing" | "flat")}>
             <option value="reducing">Reducing balance</option>
             <option value="flat">Flat rate</option>
           </Select>
         </Field>
+        {showRateInfo && (() => {
+          const hasData = !!(totalLoan && interestRate && tenure);
+          const n = hasData ? parseInt(tenure) : 0;
+          const annualRate = hasData ? parseFloat(interestRate) : 0;
+          const L = totalLoan ?? 0;
+
+          // Flat rate calculation
+          const totalInterestFlat = hasData ? L * (annualRate / 100) * (n / 12) : 0;
+          const flatEmi = hasData ? Math.round((L + totalInterestFlat) / n) : 0;
+
+          // Reducing balance calculation
+          const r = hasData ? annualRate / 100 / 12 : 0;
+          const redEmi = hasData
+            ? (r === 0 ? Math.round(L / n) : Math.round((L * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1)))
+            : 0;
+
+          const fmt = (v: number) => "₹" + Math.round(v).toLocaleString("en-IN");
+
+          return (
+            <div className="col-span-2 rounded-lg border border-info/30 bg-info-soft/60 p-3 text-[12.5px] leading-relaxed text-ink-2 space-y-3">
+              <p className="font-semibold text-ink">How EMI is calculated</p>
+
+              {/* Flat rate */}
+              <div className="space-y-1">
+                <p className="font-medium text-ink">Flat rate <span className="font-normal text-ink-3">— local/private financiers</span></p>
+                <p className="text-ink-3">Interest is charged on the <b>full original loan</b> for the entire tenure, regardless of repayments.</p>
+                <div className="rounded bg-surface/70 px-2.5 py-2 font-mono text-[11.5px] text-ink-2 space-y-0.5">
+                  <p>Total interest = Loan × Rate% × (Tenure ÷ 12)</p>
+                  <p>EMI = (Loan + Total interest) ÷ Tenure</p>
+                  {hasData && (
+                    <>
+                      <p className="mt-1 border-t border-line-2 pt-1 text-ink-3">
+                        Total interest = {fmt(L)} × {annualRate}% × ({n} ÷ 12) = {fmt(totalInterestFlat)}
+                      </p>
+                      <p className="text-ink-3">EMI = ({fmt(L)} + {fmt(totalInterestFlat)}) ÷ {n} = <span className="font-semibold text-ink">{fmt(flatEmi)}/mo</span></p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Reducing balance */}
+              <div className="space-y-1">
+                <p className="font-medium text-ink">Reducing balance <span className="font-normal text-ink-3">— banks &amp; NBFCs</span></p>
+                <p className="text-ink-3">Interest is recalculated each month on the <b>remaining principal</b> — so you pay less interest overall.</p>
+                <div className="rounded bg-surface/70 px-2.5 py-2 font-mono text-[11.5px] text-ink-2 space-y-0.5">
+                  <p>r = Annual rate ÷ 12 ÷ 100</p>
+                  <p>EMI = Loan × r × (1+r)^n ÷ ((1+r)^n − 1)</p>
+                  {hasData && (
+                    <>
+                      <p className="mt-1 border-t border-line-2 pt-1 text-ink-3">
+                        r = {annualRate}% ÷ 12 ÷ 100 = {(r).toFixed(6)}
+                      </p>
+                      <p className="text-ink-3">EMI = {fmt(L)} × {r.toFixed(6)} × (1+r)^{n} ÷ … = <span className="font-semibold text-ink">{fmt(redEmi)}/mo</span></p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {hasData ? (
+                <div className="flex items-center justify-between border-t border-info/20 pt-2">
+                  <span className="text-ink-3">Loan {fmt(L)} · {annualRate}% · {n} months</span>
+                  <span className="text-ink-3">Flat saves <span className="font-medium text-ink">{fmt(Math.abs(flatEmi - redEmi))}/mo</span> {flatEmi > redEmi ? "more" : "less"} vs reducing</span>
+                </div>
+              ) : (
+                <p className="border-t border-info/20 pt-2 text-ink-3">Enter loan amount, interest rate and tenure above to see a worked example.</p>
+              )}
+            </div>
+          );
+        })()}
         <Field label="Documentation charge ₹" hint="Flat fee — edit if needed">
           <Input name="buyerDocCharge" inputMode="decimal" value={docChargeInput}
             onChange={(e) => setDocChargeInput(e.target.value)} placeholder="0" />
