@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useTransition } from "react";
-import { Button, Field, Input, Notice, Select } from "@/components/ui";
+import { Button, Field, Input, Notice } from "@/components/ui";
 import type { Financier } from "@/lib/financiers";
 import { deleteFinancierAction, saveFinancierAction, toggleFinancier, type FinancierState } from "./actions";
 
@@ -12,24 +12,6 @@ export function FinancierForm({ id, defaults }: { id: number | null; defaults?: 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Finance company name" className="sm:col-span-2">
           <Input name="name" defaultValue={defaults?.name ?? ""} required placeholder="e.g. Bajaj Finance, HDFC, IDFC FIRST" />
-        </Field>
-        <Field label="Annual interest rate (%)" hint="Optional — used to estimate EMI">
-          <Input name="interest_rate" type="number" step="0.01" min="0" max="50" defaultValue={defaults?.interest_rate ?? ""} placeholder="e.g. 18" />
-        </Field>
-        <Field label="Rate type">
-          <Select name="rate_type" defaultValue={defaults?.rate_type ?? "reducing"}>
-            <option value="reducing">Reducing balance (standard)</option>
-            <option value="flat">Flat rate</option>
-          </Select>
-        </Field>
-        <Field label="Documentation charge (₹)" hint="Flat fee per loan, optional">
-          <Input name="doc_charge" type="number" step="0.01" min="0" defaultValue={defaults?.doc_charge ?? ""} placeholder="e.g. 500" />
-        </Field>
-        <Field label="Processing fee (%)" hint="% of loan amount, optional">
-          <Input name="processing_fee_pct" type="number" step="0.01" min="0" max="10" defaultValue={defaults?.processing_fee_pct ?? ""} placeholder="e.g. 1.5" />
-        </Field>
-        <Field label="Round EMI to nearest ₹" hint="0 = no rounding. E.g. 100 rounds ₹3,247 up to ₹3,300">
-          <Input name="round_to" type="number" step="1" min="0" max="10000" defaultValue={defaults?.round_to ?? 0} />
         </Field>
         <Field label="Notes" className="sm:col-span-2">
           <Input name="notes" defaultValue={defaults?.notes ?? ""} placeholder="e.g. Contact person, branch, special terms" />

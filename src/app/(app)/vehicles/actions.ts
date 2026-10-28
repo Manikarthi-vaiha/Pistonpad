@@ -252,6 +252,9 @@ const financeFields = {
   buyerEmiAmount: optNum(),
   buyerDocCharge: optNum(),
   buyerProcessingFee: optNum(),
+  buyerInterestRate: optNum(),
+  buyerRateType: z.enum(["reducing", "flat"]).optional().default("reducing"),
+  buyerRoundTo: z.union([z.literal(""), z.coerce.number().int().min(0).max(10000)]).transform((v) => (v === "" ? 0 : Number(v))).optional(),
 };
 const docFieldValues = (f: FormData) => ({
   time: str(f, "time"), address: str(f, "address"), idProof: str(f, "idProof"), odometerKm: strOrNull(f, "odometerKm"),
@@ -260,6 +263,9 @@ const docFieldValues = (f: FormData) => ({
   buyerDownPayment: str(f, "buyerDownPayment"), buyerTenureMonths: str(f, "buyerTenureMonths"),
   buyerEmiAmount: str(f, "buyerEmiAmount"),
   buyerDocCharge: str(f, "buyerDocCharge"), buyerProcessingFee: str(f, "buyerProcessingFee"),
+  buyerInterestRate: str(f, "buyerInterestRate"),
+  buyerRateType: str(f, "buyerRateType") || "reducing",
+  buyerRoundTo: str(f, "buyerRoundTo") || "0",
 });
 
 const saleSchema = z.object({
@@ -291,6 +297,7 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
         buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
         buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
         buyerDocCharge: d.buyerDocCharge, buyerProcessingFee: d.buyerProcessingFee,
+        buyerInterestRate: d.buyerInterestRate, buyerRateType: d.buyerRateType, buyerRoundTo: d.buyerRoundTo,
       });
     });
   } catch (e) {
@@ -337,6 +344,7 @@ export async function createVehicleDoc(vehicleId: number, kind: VehicleDocKind, 
         buyerFinanceId: d.buyerFinanceId, buyerFinanceName: d.buyerFinanceName,
         buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
         buyerDocCharge: d.buyerDocCharge, buyerProcessingFee: d.buyerProcessingFee,
+        buyerInterestRate: d.buyerInterestRate, buyerRateType: d.buyerRateType, buyerRoundTo: d.buyerRoundTo,
       });
     });
   } catch (e) {

@@ -62,6 +62,9 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
   const [tenure, setTenure] = useState("24");
   const [docChargeInput, setDocChargeInput] = useState("");
   const [processingFeeInput, setProcessingFeeInput] = useState("");
+  const [interestRate, setInterestRate] = useState("");
+  const [rateType, setRateType] = useState<"reducing" | "flat">("reducing");
+  const [roundTo, setRoundTo] = useState("0");
 
   const selectedFin = useMemo(() => financiers.find((f) => String(f.id) === finId), [financiers, finId]);
   const price = salePrice ?? 0;
@@ -70,10 +73,8 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
 
   const docChargeNum = parseFloat(docChargeInput) || 0;
   const processingFeeNum = parseFloat(processingFeeInput) || 0;
-  // Total loan = remaining loan + charges (both rolled into the financed amount)
   const totalLoan = remainingLoan != null ? remainingLoan + docChargeNum + processingFeeNum : null;
 
-  // Pre-populate charge inputs when the financier selection changes
   const handleFinancierChange = (newId: string) => {
     setFinId(newId);
     const fin = financiers.find((f) => String(f.id) === newId);
@@ -87,32 +88,34 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
       } else {
         setProcessingFeeInput("");
       }
+      setInterestRate(fin.interest_rate != null ? String(fin.interest_rate) : "");
+      setRateType(fin.rate_type === "flat" ? "flat" : "reducing");
+      setRoundTo(String(fin.round_to ?? 0));
     } else {
-      setDocChargeInput("");
-      setProcessingFeeInput("");
+      setDocChargeInput(""); setProcessingFeeInput("");
+      setInterestRate(""); setRateType("reducing"); setRoundTo("0");
     }
   };
 
   const emi = useMemo(() => {
-    if (!totalLoan || !selectedFin?.interest_rate || !tenure) return null;
+    if (!totalLoan || !interestRate || !tenure) return null;
+    const rate = parseFloat(interestRate);
+    if (!rate) return null;
     const n = parseInt(tenure);
-    const r = Number(selectedFin.interest_rate) / 100 / 12;
     let e: number;
-    if (selectedFin.rate_type === "flat") {
-      e = (totalLoan + totalLoan * Number(selectedFin.interest_rate) / 100 * n / 12) / n;
+    if (rateType === "flat") {
+      e = (totalLoan + totalLoan * rate / 100 * n / 12) / n;
     } else {
+      const r = rate / 100 / 12;
       if (r === 0) e = totalLoan / n;
       else e = (totalLoan * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
     }
-    if (selectedFin.round_to > 0) e = Math.ceil(e / selectedFin.round_to) * selectedFin.round_to;
+    const rt = parseInt(roundTo) || 0;
+    if (rt > 0) e = Math.ceil(e / rt) * rt;
     return Math.round(e);
-  }, [totalLoan, selectedFin, tenure]);
+  }, [totalLoan, interestRate, rateType, roundTo, tenure]);
 
   const fmt = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  // Hint shows the default % calculation so user knows the suggested value
-  const procHint = selectedFin?.processing_fee_pct != null && remainingLoan != null
-    ? `Default: ${selectedFin.processing_fee_pct}% of ₹${remainingLoan.toLocaleString("en-IN")} = ₹${Math.round(remainingLoan * Number(selectedFin.processing_fee_pct) / 100).toLocaleString("en-IN")}`
-    : undefined;
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-info/40 bg-info-soft p-4">
@@ -139,13 +142,27 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
             {[6, 12, 18, 24, 30, 36, 48, 60, 72, 84].map((n) => <option key={n} value={String(n)}>{n} months</option>)}
           </Select>
         </Field>
+        <Field label="Interest rate (%)" hint="Annual rate for EMI calculation">
+          <Input name="buyerInterestRate" inputMode="decimal" value={interestRate}
+            onChange={(e) => setInterestRate(e.target.value)} placeholder="e.g. 18" />
+        </Field>
+        <Field label="Rate type">
+          <Select name="buyerRateType" value={rateType} onChange={(e) => setRateType(e.target.value as "reducing" | "flat")}>
+            <option value="reducing">Reducing balance</option>
+            <option value="flat">Flat rate</option>
+          </Select>
+        </Field>
         <Field label="Documentation charge ₹" hint="Flat fee — edit if needed">
           <Input name="buyerDocCharge" inputMode="decimal" value={docChargeInput}
             onChange={(e) => setDocChargeInput(e.target.value)} placeholder="0" />
         </Field>
-        <Field label="Processing fee ₹" hint={procHint ?? "Flat amount — edit if needed"}>
+        <Field label="Processing fee ₹" hint="Flat amount — edit if needed">
           <Input name="buyerProcessingFee" inputMode="decimal" value={processingFeeInput}
             onChange={(e) => setProcessingFeeInput(e.target.value)} placeholder="0" />
+        </Field>
+        <Field label="Round EMI to nearest ₹" hint="0 = no rounding. E.g. 100 → ₹3,247 becomes ₹3,300">
+          <Input name="buyerRoundTo" inputMode="numeric" value={roundTo}
+            onChange={(e) => setRoundTo(e.target.value)} placeholder="0" />
         </Field>
       </div>
 

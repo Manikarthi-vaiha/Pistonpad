@@ -22,22 +22,13 @@ export async function getFinancier(id: number) {
   return f ?? null;
 }
 
-export async function saveFinancier(id: number | null, data: {
-  name: string; interest_rate: number | null; rate_type: string;
-  doc_charge: number | null; processing_fee_pct: number | null; round_to: number; notes: string;
-}) {
+export async function saveFinancier(id: number | null, data: { name: string; notes: string }) {
   if (id) {
-    await sql`update financiers set
-      name = ${data.name}, interest_rate = ${data.interest_rate}, rate_type = ${data.rate_type},
-      doc_charge = ${data.doc_charge}, processing_fee_pct = ${data.processing_fee_pct},
-      round_to = ${data.round_to}, notes = ${data.notes}, updated_at = now()
-      where id = ${id}`;
+    await sql`update financiers set name = ${data.name}, notes = ${data.notes}, updated_at = now() where id = ${id}`;
     return id;
   }
   const [row] = await sql<{ id: number }[]>`
-    insert into financiers (name, interest_rate, rate_type, doc_charge, processing_fee_pct, round_to, notes)
-    values (${data.name}, ${data.interest_rate}, ${data.rate_type}, ${data.doc_charge}, ${data.processing_fee_pct}, ${data.round_to}, ${data.notes})
-    returning id`;
+    insert into financiers (name, notes) values (${data.name}, ${data.notes}) returning id`;
   return row.id;
 }
 

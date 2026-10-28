@@ -40,6 +40,7 @@ export type VehicleDocInput = {
   buyerFinanceId?: number | null; buyerFinanceName?: string;
   buyerDownPayment?: number | null; buyerTenureMonths?: number | null; buyerEmiAmount?: number | null;
   buyerDocCharge?: number | null; buyerProcessingFee?: number | null;
+  buyerInterestRate?: number | null; buyerRateType?: string; buyerRoundTo?: number;
 };
 
 /** "2026-10-23" + "16:35" in Indian time. */
@@ -102,6 +103,9 @@ export async function issueVehicleDoc(tx: Tx, input: VehicleDocInput) {
       buyer_emi_amount: input.buyerEmiAmount ?? null,
       buyer_doc_charge: input.buyerDocCharge ?? null,
       buyer_processing_fee: input.buyerProcessingFee ?? null,
+      buyer_interest_rate: input.buyerInterestRate ?? null,
+      buyer_rate_type: input.buyerRateType ?? "reducing",
+      buyer_round_to: input.buyerRoundTo ?? 0,
     })}
     returning id, doc_no`;
   return doc;
@@ -117,6 +121,7 @@ export type VehicleDoc = {
   status: "issued" | "cancelled"; cancel_reason: string; created_by: string | null;
   buyer_finance_id: number | null; buyer_finance_name: string;
   buyer_down_payment: number | null; buyer_tenure_months: number | null; buyer_emi_amount: number | null;
+  buyer_interest_rate: number | null; buyer_rate_type: string; buyer_round_to: number;
   buyer_doc_charge: number | null; buyer_processing_fee: number | null;
 };
 export type DocShop = {
