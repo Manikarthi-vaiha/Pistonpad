@@ -305,7 +305,8 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
                 <CardHeader title="Sell this bike" sub="Records the buyer and closes the bike" />
                 <div className="p-5"><SellForm vehicleId={v.id} ourPrice={v.our_price != null ? Number(v.our_price) : null} minPrice={v.min_price != null ? Number(v.min_price) : null}
                   buyerLoan={v.loan_paid_by === "buyer" && v.loan_status !== "none" ? { amount: Number(v.loan_closure_amount ?? 0), financier: v.hypothecation } : null}
-                  nowTime={nowTime} odometerKm={v.odometer_km} papers={v.docs_in_hand} financiers={financiers} /></div>
+                  nowTime={nowTime} odometerKm={v.odometer_km} papers={v.docs_in_hand} financiers={financiers}
+                  totalCost={totalCost} bought={bought} refurbCost={d.refurbCost} loanCost={loanCost} /></div>
               </>
             )}
           </Card>

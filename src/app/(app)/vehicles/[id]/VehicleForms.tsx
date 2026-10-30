@@ -97,15 +97,19 @@ export function OwnerForm({ vehicleId, nextNo }: { vehicleId: number; nextNo: nu
   );
 }
 
-export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, odometerKm, papers, financiers }: {
+export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, odometerKm, papers, financiers, totalCost, bought, refurbCost, loanCost }: {
   vehicleId: number; ourPrice: number | null; minPrice: number | null; buyerLoan: { amount: number; financier: string } | null;
   nowTime: string; odometerKm: number | null; papers: string[]; financiers: Financier[];
+  totalCost: number; bought: number; refurbCost: number; loanCost: number;
 }) {
   // On success the server action redirects to the new sale invoice.
   const [state, run, pending] = useActionState<VehicleState, FormData>(markSold.bind(null, vehicleId), {});
   const [price, setPrice] = useState(ourPrice != null ? String(ourPrice) : "");
   const below = minPrice != null && Number(price) > 0 && Number(price) < minPrice;
   const salePrice = parseFloat(price) || undefined;
+  const numPrice = Number(price) || 0;
+  const profit = totalCost > 0 && numPrice > 0 ? numPrice - totalCost : null;
+  const fmt = (v: number) => "₹" + v.toLocaleString("en-IN");
   return (
     <form action={run} className="flex flex-col gap-3">
       <div className="grid grid-cols-2 gap-3">
@@ -113,6 +117,26 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
           <Input name="price" inputMode="decimal" value={price} onChange={(e) => setPrice(e.target.value)} required />
         </Field>
         <Field label="Date"><DatePicker name="date" defaultValue={isoDate()} max={isoDate()} ariaLabel="Sale date" /></Field>
+        {totalCost > 0 && (
+          <div className={`col-span-2 rounded-lg border px-4 py-3 text-[13px] ${profit == null ? "border-line bg-surface-2" : profit >= 0 ? "border-good/30 bg-good-soft/50" : "border-bad/30 bg-bad-soft/50"}`}>
+            <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-0.5">
+              {bought > 0 && <><dt className="text-ink-3">We bought for</dt><dd className="text-right font-medium text-ink">{fmt(bought)}</dd></>}
+              {refurbCost > 0 && <><dt className="text-ink-3">Service &amp; repairs</dt><dd className="text-right font-medium text-ink">{fmt(refurbCost)}</dd></>}
+              {loanCost > 0 && <><dt className="text-ink-3">Loan (shop paid)</dt><dd className="text-right font-medium text-ink">{fmt(loanCost)}</dd></>}
+              <dt className="border-t border-line pt-1.5 mt-0.5 text-ink-2 font-medium">Total cost</dt>
+              <dd className="border-t border-line pt-1.5 mt-0.5 text-right font-semibold text-ink">{fmt(totalCost)}</dd>
+              {profit != null && (
+                <>
+                  <dt className={`border-t border-line/60 pt-1.5 mt-0.5 font-semibold ${profit >= 0 ? "text-good" : "text-bad"}`}>Profit</dt>
+                  <dd className={`border-t border-line/60 pt-1.5 mt-0.5 text-right font-bold text-[15px] ${profit >= 0 ? "text-good" : "text-bad"}`}>{profit >= 0 ? "" : "−"}{fmt(Math.abs(profit))}</dd>
+                </>
+              )}
+              {profit == null && numPrice === 0 && (
+                <><dt className="border-t border-line pt-1.5 mt-0.5 text-ink-3 col-span-2">Enter the sale price to see profit</dt></>
+              )}
+            </dl>
+          </div>
+        )}
         <Field label="Buyer name"><Input name="buyer" required /></Field>
         <Field label="Buyer phone"><Input name="phone" type="tel" /></Field>
         <Field label="Paid by" hint="Finance = buyer's loan company pays us" className="col-span-2">
