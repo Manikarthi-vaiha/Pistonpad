@@ -440,6 +440,41 @@ export const en: HelpLang = {
     },
 
     {
+      id: "bike-exchange",
+      group: "bikes",
+      title: "Bike exchange deals",
+      summary: "How to record a deal where the customer gives their old bike as part-payment.",
+      blocks: [
+        { type: "p", text: "An exchange deal is when a customer gives you their old bike as part-payment for a bike they are buying from you. The old bike's agreed value reduces the cash the customer needs to pay." },
+        { type: "h", text: "How to record it" },
+        { type: "steps", items: [
+          "Open the bike page and scroll to **Sell this bike**.",
+          "Enter the sale price and buyer details as usual.",
+          "Under **Paid by**, choose **Exchange**.",
+          "An **Exchange bike details** section appears. Enter the reg number, make, model, year and the exchange value (what you are crediting the customer for their bike).",
+          "The **balance due** is calculated automatically: sale price − exchange value.",
+          "Choose how the balance is paid (Cash, UPI, Bank, etc.).",
+          "Click **Mark as sold and create invoice** — the system creates the sale invoice and adds the exchange bike to your inventory in one step.",
+        ] },
+        { type: "example", title: "Exchange deal breakdown", lines: [
+          { label: "Sale price of our bike", value: "₹1,40,000" },
+          { label: "Exchange allowance (Honda Activa · TN 76 XX 1234)", value: "− ₹40,000", kind: "minus" },
+          { label: "Balance paid by buyer (Cash)", value: "₹1,00,000", kind: "total" },
+        ] },
+        { type: "h", text: "What happens automatically" },
+        { type: "list", items: [
+          "The sold bike is closed and a numbered sale invoice is issued.",
+          "The exchange bike is added to **Used bikes** as a new entry with status **In stock** and purchase price set to the exchange value.",
+          "The seller's name (buyer of the sold bike) is recorded as the seller of the exchange bike.",
+          "Both bikes are linked — you can see the exchange note on the sold bike's record.",
+        ] },
+        { type: "h", text: "Invoice" },
+        { type: "p", text: "The sale invoice shows the full sale price, then deducts the exchange allowance (with the bike's reg number and make/model), and shows the balance paid. This makes the deal transparent for both parties." },
+        { type: "tip", text: "After the sale, open the exchange bike's page to fill in its full details — chassis number, engine number, insurance, and photos." },
+      ],
+    },
+
+    {
       id: "bike-docs",
       group: "bikes",
       title: "Bike sale invoices and purchase receipts",

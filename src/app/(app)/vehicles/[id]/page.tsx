@@ -290,7 +290,12 @@ export default async function VehiclePage({ params, searchParams }: PageProps<"/
                 <div className="px-5 py-4 text-sm">
                   <p className="font-semibold">{v.sold_to}{v.sold_phone ? <span className="font-normal text-ink-2"> · {v.sold_phone}</span> : null}</p>
                   <p className="text-ink-2">{v.sold_on ? dateLabel(v.sold_on) : ""} for {rupees(v.sold_price)}{v.sold_payment_mode ? ` · paid by ${v.sold_payment_mode}` : ""}</p>
-                  {v.loan_paid_by === "buyer" && Number(v.loan_closure_amount) ? (
+                  {v.exchange_value != null && Number(v.exchange_value) > 0 ? (
+                    <p className="mt-1 text-xs text-ink-3">
+                      Exchanged: {[v.exchange_make, v.exchange_model].filter(Boolean).join(" ") || "bike"} {v.exchange_reg_no}{v.exchange_year ? ` (${v.exchange_year})` : ""} · value {rupees(v.exchange_value)}
+                      {Number(v.sold_price) - Number(v.exchange_value) > 0 ? ` + ${rupees(Number(v.sold_price) - Number(v.exchange_value))} ${v.exchange_balance_mode || "cash"}` : ""}
+                    </p>
+                  ) : v.loan_paid_by === "buyer" && Number(v.loan_closure_amount) ? (
                     <p className="mt-1 text-xs text-ink-3">Buyer paid {rupees(v.loan_closure_amount)} to {v.hypothecation || "the financier"} directly · we received {rupees(Number(v.sold_price) - Number(v.loan_closure_amount))}</p>
                   ) : null}
                   {openSale ? (

@@ -28,6 +28,8 @@ export type Vehicle = {
   market_price: number | null; our_price: number | null; min_price: number | null;
   sold_price: number | null; sold_on: string | null; sold_to: string; sold_phone: string; sold_payment_mode: string;
   sold_address: string; sold_id_proof: string; owner_id_proof: string;
+  exchange_reg_no: string; exchange_make: string; exchange_model: string; exchange_year: number | null;
+  exchange_value: number | null; exchange_vehicle_id: number | null; exchange_balance_mode: string;
   notes: string; created_at: Date; updated_at: Date; created_by_name: string | null;
 };
 

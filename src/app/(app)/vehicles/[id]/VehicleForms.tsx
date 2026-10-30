@@ -11,6 +11,7 @@ import {
   type VehicleState,
 } from "../actions";
 import type { Financier } from "@/lib/financiers";
+import { EXCHANGE_BALANCE_MODES } from "@/lib/expenses";
 import { DocFields, PaymentModeSelect } from "./VehicleDocs";
 
 type Action = (id: number, s: VehicleState, f: FormData) => Promise<VehicleState>;
@@ -105,10 +106,15 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
   // On success the server action redirects to the new sale invoice.
   const [state, run, pending] = useActionState<VehicleState, FormData>(markSold.bind(null, vehicleId), {});
   const [price, setPrice] = useState(ourPrice != null ? String(ourPrice) : "");
+  const [mode, setMode] = useState("Cash");
+  const [exValue, setExValue] = useState("");
   const below = minPrice != null && Number(price) > 0 && Number(price) < minPrice;
   const salePrice = parseFloat(price) || undefined;
   const numPrice = Number(price) || 0;
-  const profit = totalCost > 0 && numPrice > 0 ? numPrice - totalCost : null;
+  const isExchange = mode === "Exchange";
+  const exNum = isExchange ? (parseFloat(exValue) || 0) : 0;
+  const effectiveSale = numPrice - exNum;
+  const profit = totalCost > 0 && numPrice > 0 ? effectiveSale - totalCost : null;
   const fmt = (v: number) => "₹" + v.toLocaleString("en-IN");
   return (
     <form action={run} className="flex flex-col gap-3">
@@ -125,6 +131,7 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
               {loanCost > 0 && <><dt className="text-ink-3">Loan (shop paid)</dt><dd className="text-right font-medium text-ink">{fmt(loanCost)}</dd></>}
               <dt className="border-t border-line pt-1.5 mt-0.5 text-ink-2 font-medium">Total cost</dt>
               <dd className="border-t border-line pt-1.5 mt-0.5 text-right font-semibold text-ink">{fmt(totalCost)}</dd>
+              {isExchange && exNum > 0 && <><dt className="text-ink-3 pt-0.5">Exchange allowance</dt><dd className="text-right font-medium text-ink pt-0.5">−{fmt(exNum)}</dd></>}
               {profit != null && (
                 <>
                   <dt className={`border-t border-line/60 pt-1.5 mt-0.5 font-semibold ${profit >= 0 ? "text-good" : "text-bad"}`}>Profit</dt>
@@ -139,9 +146,36 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
         )}
         <Field label="Buyer name"><Input name="buyer" required /></Field>
         <Field label="Buyer phone"><Input name="phone" type="tel" /></Field>
-        <Field label="Paid by" hint="Finance = buyer's loan company pays us" className="col-span-2">
-          <PaymentModeSelect defaultValue="Cash" financiers={financiers} salePrice={salePrice} />
+        <Field label="Paid by" hint="Exchange = customer gives their old bike as part-payment" className="col-span-2">
+          <PaymentModeSelect defaultValue="Cash" financiers={financiers} salePrice={salePrice} onModeChange={setMode} />
         </Field>
+        {isExchange && (
+          <div className="col-span-2 rounded-lg border border-info/30 bg-info-soft/40 p-3 space-y-3">
+            <p className="text-[12px] font-semibold text-ink-2">Exchange bike details</p>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Reg number" className="col-span-2">
+                <Input name="exchangeRegNo" placeholder="TN 76 XX 1234" required={isExchange} className="font-mono uppercase" />
+              </Field>
+              <Field label="Make"><Input name="exchangeMake" placeholder="Honda" /></Field>
+              <Field label="Model"><Input name="exchangeModel" placeholder="Activa 6G" /></Field>
+              <Field label="Year"><Input name="exchangeYear" inputMode="numeric" placeholder="2020" /></Field>
+              <Field label="Exchange value ₹" hint="What we are paying for their bike">
+                <Input name="exchangeValue" inputMode="decimal" value={exValue} onChange={(e) => setExValue(e.target.value)} required={isExchange} />
+              </Field>
+            </div>
+            {numPrice > 0 && exNum > 0 && (
+              <div className="rounded border border-line bg-surface px-3 py-2 text-[12.5px]">
+                <span className="text-ink-3">Balance due from buyer: </span>
+                <span className="font-semibold text-ink">{fmt(Math.max(0, numPrice - exNum))}</span>
+              </div>
+            )}
+            <Field label="Balance paid by">
+              <Select name="exchangeBalanceMode" defaultValue="Cash">
+                {EXCHANGE_BALANCE_MODES.map((m) => <option key={m}>{m}</option>)}
+              </Select>
+            </Field>
+          </div>
+        )}
       </div>
       <p className="-mb-1 border-t border-line pt-3 text-[11.5px] font-semibold tracking-wider text-ink-3 uppercase">For the sale invoice</p>
       <DocFields who="Buyer" nowTime={nowTime} odometerKm={odometerKm} papers={papers} papersLabel="Papers handed over" />

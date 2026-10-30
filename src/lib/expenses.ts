@@ -24,4 +24,5 @@ export const BUSINESSES: Record<string, { label: string; short: string; hint: st
 export type Business = "parts" | "vehicles" | "shared";
 
 /** Payment methods a bike buyer can use (finance = paid by the buyer's loan company). */
-export const BIKE_PAYMENT_MODES = ["Cash", "UPI", "Bank", "Card", "Cheque", "Finance"];
+export const BIKE_PAYMENT_MODES = ["Cash", "UPI", "Bank", "Card", "Cheque", "Finance", "Exchange"];
+export const EXCHANGE_BALANCE_MODES = ["Cash", "UPI", "Bank", "Card", "Cheque"];

@@ -41,6 +41,9 @@ export type VehicleDocInput = {
   buyerDownPayment?: number | null; buyerTenureMonths?: number | null; buyerEmiAmount?: number | null;
   buyerDocCharge?: number | null; buyerProcessingFee?: number | null;
   buyerInterestRate?: number | null; buyerRateType?: string; buyerRoundTo?: number;
+  // Exchange deal (sale only)
+  exchangeRegNo?: string; exchangeMakeModel?: string; exchangeYear?: number | null;
+  exchangeValue?: number | null; exchangeBalanceMode?: string;
 };
 
 /** "2026-10-23" + "16:35" in Indian time. */
@@ -106,6 +109,11 @@ export async function issueVehicleDoc(tx: Tx, input: VehicleDocInput) {
       buyer_interest_rate: input.buyerInterestRate ?? null,
       buyer_rate_type: input.buyerRateType ?? "reducing",
       buyer_round_to: input.buyerRoundTo ?? 0,
+      exchange_reg_no: input.exchangeRegNo ?? "",
+      exchange_make_model: input.exchangeMakeModel ?? "",
+      exchange_year: input.exchangeYear ?? null,
+      exchange_value: input.exchangeValue ?? null,
+      exchange_balance_mode: input.exchangeBalanceMode ?? "",
     })}
     returning id, doc_no`;
   return doc;
@@ -123,6 +131,8 @@ export type VehicleDoc = {
   buyer_down_payment: number | null; buyer_tenure_months: number | null; buyer_emi_amount: number | null;
   buyer_interest_rate: number | null; buyer_rate_type: string; buyer_round_to: number;
   buyer_doc_charge: number | null; buyer_processing_fee: number | null;
+  exchange_reg_no: string; exchange_make_model: string; exchange_year: number | null;
+  exchange_value: number | null; exchange_balance_mode: string;
 };
 export type DocShop = {
   shop_name: string; address: string; phone: string; email: string; gstin: string; logo: Buffer | null; logo_type: string | null; logo_version: number;
@@ -230,7 +240,15 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
       rows.push(["Paid to the seller", money(doc.paid_amount)]);
     }
   }
-  if (!hasBuyerFinance && doc.payment_mode) rows.push([sale ? "Paid by" : "Paid to the seller by", doc.payment_mode]);
+  const hasExchange = sale && doc.exchange_value != null && Number(doc.exchange_value) > 0;
+  if (hasExchange) {
+    const exDesc = [doc.exchange_make_model, doc.exchange_reg_no, doc.exchange_year ? `(${doc.exchange_year})` : ""].filter(Boolean).join(" · ");
+    rows.push([`Exchange allowance (${exDesc})`, `− ${money(Number(doc.exchange_value))}`]);
+    const balance = doc.price - Number(doc.exchange_value);
+    if (balance > 0) rows.push([`Balance paid by ${doc.exchange_balance_mode || "buyer"}`, money(balance)]);
+  } else if (!hasBuyerFinance && doc.payment_mode) {
+    rows.push([sale ? "Paid by" : "Paid to the seller by", doc.payment_mode]);
+  }
   const loanNote = !sale && doc.loan_amount > 0 && doc.loan_payer === "owner"
     ? `The seller will close the loan with ${fin} (${money(doc.loan_amount)}) and hand over the NOC.` : "";
 

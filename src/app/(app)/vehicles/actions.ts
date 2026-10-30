@@ -224,7 +224,9 @@ export async function setVehicleStatus(vehicleId: number, status: "in_stock" | "
   await sql.begin(async (tx) => {
     const [v] = await tx<{ status: string }[]>`select status from vehicles where id = ${vehicleId} for update`;
     await tx`update vehicles set status = ${status}, sold_price = null, sold_on = null, sold_to = '', sold_phone = '', sold_payment_mode = '',
-             sold_address = '', sold_id_proof = '', updated_at = now()
+             sold_address = '', sold_id_proof = '',
+             exchange_reg_no = '', exchange_make = '', exchange_model = '', exchange_year = null,
+             exchange_value = null, exchange_vehicle_id = null, exchange_balance_mode = '', updated_at = now()
              where id = ${vehicleId}`;
     // Undoing a sale cancels its invoice; the number stays used so the series has no gaps.
     if (v?.status === "sold") {
@@ -273,24 +275,55 @@ const saleSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the sale date."),
   buyer: z.string().trim().min(2, "Enter the buyer's name.").max(120), phone: text(20),
   mode: z.string().refine((m) => BIKE_PAYMENT_MODES.includes(m), "Choose how the buyer paid."),
+  exchangeRegNo: text(20), exchangeMake: text(60), exchangeModel: text(80),
+  exchangeYear: z.union([z.literal(""), z.coerce.number().int().min(1950).max(new Date().getFullYear() + 1)])
+    .transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  exchangeValue: z.union([z.literal(""), z.coerce.number().min(0)])
+    .transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  exchangeBalanceMode: text(20),
   ...docFields, ...financeFields,
 });
 /** Marks the bike sold and issues its numbered sale invoice in the same step. */
 export async function markSold(vehicleId: number, _: VehicleState, f: FormData): Promise<VehicleState> {
   const user = await requireUser();
   const r = saleSchema.safeParse({
-    price: strOrNull(f, "price"), date: str(f, "date"), buyer: str(f, "buyer"), phone: str(f, "phone"), mode: str(f, "mode"), ...docFieldValues(f),
+    price: strOrNull(f, "price"), date: str(f, "date"), buyer: str(f, "buyer"), phone: str(f, "phone"), mode: str(f, "mode"),
+    exchangeRegNo: str(f, "exchangeRegNo"), exchangeMake: str(f, "exchangeMake"), exchangeModel: str(f, "exchangeModel"),
+    exchangeYear: strOrNull(f, "exchangeYear"), exchangeValue: strOrNull(f, "exchangeValue"),
+    exchangeBalanceMode: str(f, "exchangeBalanceMode"),
+    ...docFieldValues(f),
   });
   if (!r.success) return { error: r.error.issues[0]?.message ?? "Check the sale details." };
   const d = r.data;
   let doc: { id: number; doc_no: string };
   try {
+    const isExchange = d.mode === "Exchange" && d.exchangeRegNo && d.exchangeValue != null;
     doc = await sql.begin(async (tx) => {
+      // If exchange deal, create the received bike as a new inventory record.
+      let exchangeVehicleId: number | null = null;
+      if (isExchange) {
+        const reg = normalizeReg(d.exchangeRegNo);
+        const [exv] = await tx<{ id: number }[]>`
+          insert into vehicles (reg_no, make, model, status, purchase_price, purchase_date, purchased_from, updated_at)
+          values (${reg}, ${d.exchangeMake}, ${d.exchangeModel}, 'in_stock',
+                  ${d.exchangeValue ?? null}, ${d.date}, ${d.buyer}, now())
+          returning id`;
+        exchangeVehicleId = exv.id;
+        await tx`insert into vehicle_events ${tx({ vehicle_id: exv.id, event_date: d.date, kind: "purchase", title: `Received in exchange for bike sold to ${d.buyer}`, cost: 0, user_id: user.uid })}`;
+      }
       await tx`update vehicles set status = 'sold', sold_price = ${d.price}, sold_on = ${d.date}, sold_to = ${d.buyer}, sold_phone = ${d.phone},
                sold_payment_mode = ${d.mode}, sold_address = ${d.address}, sold_id_proof = ${d.idProof},
+               exchange_reg_no = ${isExchange ? normalizeReg(d.exchangeRegNo) : ""},
+               exchange_make = ${isExchange ? d.exchangeMake : ""},
+               exchange_model = ${isExchange ? d.exchangeModel : ""},
+               exchange_year = ${(isExchange && d.exchangeYear) ? d.exchangeYear : null},
+               exchange_value = ${isExchange ? (d.exchangeValue ?? null) : null},
+               exchange_vehicle_id = ${exchangeVehicleId},
+               exchange_balance_mode = ${isExchange ? d.exchangeBalanceMode : ""},
                odometer_km = greatest(coalesce(odometer_km, 0), coalesce(${d.odometerKm}::int, 0)), updated_at = now()
                where id = ${vehicleId}`;
-      await tx`insert into vehicle_events ${tx({ vehicle_id: vehicleId, event_date: d.date, kind: "sale", title: `Sold to ${d.buyer} · paid by ${d.mode}`, cost: 0, user_id: user.uid })}`;
+      await tx`insert into vehicle_events ${tx({ vehicle_id: vehicleId, event_date: d.date, kind: "sale", title: isExchange ? `Sold to ${d.buyer} · exchange + ${d.exchangeBalanceMode || "cash"}` : `Sold to ${d.buyer} · paid by ${d.mode}`, cost: 0, user_id: user.uid })}`;
+      const exchangeMakeModel = isExchange ? [d.exchangeMake, d.exchangeModel].filter(Boolean).join(" ") : "";
       return issueVehicleDoc(tx, {
         vehicleId, kind: "sale", date: d.date, time: d.time, partyName: d.buyer, partyPhone: d.phone, partyAddress: d.address,
         partyIdProof: d.idProof, paymentMode: d.mode, odometerKm: d.odometerKm, papers: d.papers, notes: d.notes, userId: user.uid,
@@ -298,6 +331,9 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
         buyerDownPayment: d.buyerDownPayment, buyerTenureMonths: d.buyerTenureMonths, buyerEmiAmount: d.buyerEmiAmount,
         buyerDocCharge: d.buyerDocCharge, buyerProcessingFee: d.buyerProcessingFee,
         buyerInterestRate: d.buyerInterestRate, buyerRateType: d.buyerRateType, buyerRoundTo: d.buyerRoundTo,
+        exchangeRegNo: isExchange ? normalizeReg(d.exchangeRegNo) : "",
+        exchangeMakeModel, exchangeYear: isExchange ? d.exchangeYear : null,
+        exchangeValue: isExchange ? d.exchangeValue : null, exchangeBalanceMode: isExchange ? d.exchangeBalanceMode : "",
       });
     });
   } catch (e) {

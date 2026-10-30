@@ -282,13 +282,14 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
  * Payment mode select that also controls the FinanceSection.
  * Use this in forms that need the finance section.
  */
-export function PaymentModeSelect({ defaultValue, financiers, salePrice, name = "mode" }: {
-  defaultValue?: string; financiers: Financier[]; salePrice?: number; name?: string;
+export function PaymentModeSelect({ defaultValue, financiers, salePrice, name = "mode", onModeChange }: {
+  defaultValue?: string; financiers: Financier[]; salePrice?: number; name?: string; onModeChange?: (m: string) => void;
 }) {
   const [mode, setMode] = useState(defaultValue ?? "Cash");
+  const handleChange = (m: string) => { setMode(m); onModeChange?.(m); };
   return (
     <>
-      <Select name={name} value={mode} onChange={(e) => setMode(e.target.value)}>
+      <Select name={name} value={mode} onChange={(e) => handleChange(e.target.value)}>
         {BIKE_PAYMENT_MODES.map((m) => <option key={m}>{m}</option>)}
       </Select>
       {mode === "Finance" && <FinanceSection financiers={financiers} salePrice={salePrice} />}
