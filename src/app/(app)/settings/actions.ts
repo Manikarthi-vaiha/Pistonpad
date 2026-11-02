@@ -5,19 +5,21 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { GSTIN_RE } from "@/lib/format";
+import { audit } from "@/lib/audit";
 
 export type SettingsState = { error?: string; ok?: string };
 const s = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 const isUnique = (e: unknown) => !!e && typeof e === "object" && "code" in e && e.code === "23505";
 
 export async function saveShop(_: SettingsState, f: FormData): Promise<SettingsState> {
-  await requireUser("owner");
+  const me = await requireUser("owner");
   const gstin = s(f, "gstin").toUpperCase();
   if (gstin && !GSTIN_RE.test(gstin)) return { error: "The GSTIN doesn't look right. It should be 15 characters, like 33ABCDE1234F1Z5." };
   const prefix = s(f, "invoice_prefix").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6) || "INV";
   await sql`update settings set shop_name = ${s(f, "shop_name") || "My Spares Shop"}, address = ${s(f, "address")}, phone = ${s(f, "phone")},
             email = ${s(f, "email")}, gstin = ${gstin}, state_code = ${gstin ? gstin.slice(0, 2) : s(f, "state_code") || "33"},
             invoice_prefix = ${prefix}, invoice_footer = ${s(f, "invoice_footer")}, updated_at = now() where id = 1`;
+  audit("settings", "update", "Updated shop settings", { userId: me.uid, userName: me.name });
   revalidatePath("/", "layout");
   return { ok: "Shop details saved." };
 }
@@ -57,7 +59,7 @@ export async function addCategory(_: SettingsState, f: FormData): Promise<Settin
 }
 
 export async function addUser(_: SettingsState, f: FormData): Promise<SettingsState> {
-  await requireUser("owner");
+  const me = await requireUser("owner");
   const name = s(f, "name"), username = s(f, "username").toLowerCase(), password = String(f.get("password") ?? "");
   const role = f.get("role") === "owner" ? "owner" : "staff";
   if (!name || !username) return { error: "Enter a name and a username." };
@@ -66,6 +68,7 @@ export async function addUser(_: SettingsState, f: FormData): Promise<SettingsSt
   try {
     await sql`insert into users (name, username, password_hash, role) values (${name}, ${username}, ${await bcrypt.hash(password, 10)}, ${role})`;
   } catch (e) { if (isUnique(e)) return { error: `The username ${username} is taken.` }; throw e; }
+  audit("settings", "add_user", `Added user ${name} (${username}) as ${role}`, { userId: me.uid, userName: me.name });
   revalidatePath("/settings");
   return { ok: `${name} can now sign in as ${username}.` };
 }
@@ -73,7 +76,11 @@ export async function addUser(_: SettingsState, f: FormData): Promise<SettingsSt
 export async function setUserActive(userId: number, active: boolean): Promise<SettingsState> {
   const me = await requireUser("owner");
   if (me.uid === userId) return { error: "You can't disable your own login." };
+  const [u] = await sql<{ name: string }[]>`select name from users where id = ${userId}`;
   await sql`update users set active = ${active} where id = ${userId}`;
+  audit("settings", active ? "enable_user" : "disable_user",
+    `${active ? "Enabled" : "Disabled"} login for ${u?.name ?? `user ${userId}`}`,
+    { userId: me.uid, userName: me.name });
   revalidatePath("/settings");
   return { ok: active ? "Login enabled." : "Login disabled." };
 }

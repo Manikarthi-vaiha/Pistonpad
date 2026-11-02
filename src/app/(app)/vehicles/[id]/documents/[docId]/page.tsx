@@ -6,8 +6,8 @@ import { Notice } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { vehicleDocPdfPath } from "@/lib/pdf/link";
 import { getShop } from "@/lib/shop";
-import { buildDocModel, loadVehicleDoc, type DocParty } from "@/lib/vehicle-docs";
-import { DocActions } from "../../VehicleDocs";
+import { buildDocModel, getDueNotes, loadVehicleDoc, type DocParty } from "@/lib/vehicle-docs";
+import { DocActions, DueSection } from "../../VehicleDocs";
 
 export const metadata: Metadata = { title: "Bike document" };
 
@@ -19,6 +19,7 @@ export default async function VehicleDocPage({ params, searchParams }: PageProps
   const [data, shop] = await Promise.all([loadVehicleDoc(Number(docId)), getShop()]);
   if (!data || data.doc.vehicle_id !== Number(id)) notFound();
   const { doc } = data;
+  const dueNotes = doc.due_amount && Number(doc.due_amount) > 0 ? await getDueNotes(doc.id) : [];
   const m = buildDocModel(doc, data.shop);
   const shareText = [`*${m.shop.name}*`, `${m.title} ${m.no} · ${m.date}`, `${m.plate} · ${doc.bike.make} ${doc.bike.model}`, `${m.total[0]}: ${m.total[1]}`].join("\n");
 
@@ -114,6 +115,18 @@ export default async function VehicleDocPage({ params, searchParams }: PageProps
         </footer>
       </article>
       {doc.created_by ? <p className="no-print mx-auto mt-3 max-w-[900px] text-xs text-ink-3">Issued by {doc.created_by}</p> : null}
+      {doc.kind === "sale" && doc.due_amount && Number(doc.due_amount) > 0 ? (
+        <div className="no-print mx-auto mt-4 max-w-[900px]">
+          <DueSection
+            vehicleId={Number(id)}
+            invoiceId={doc.id}
+            dueAmount={Number(doc.due_amount)}
+            dueDate={doc.due_date}
+            dueReceivedOn={doc.due_received_on}
+            initialNotes={dueNotes}
+          />
+        </div>
+      ) : null}
     </>
   );
 }

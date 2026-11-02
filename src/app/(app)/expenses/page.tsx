@@ -29,7 +29,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
     return `/expenses?${p}`;
   };
 
-  const [rows, byCategory, [tot], recentCats, byBusiness] = await Promise.all([
+  const [rows, byCategory, [tot], recentCats, byBusiness, customCats] = await Promise.all([
     sql<{ id: number; expense_date: string; category: string; amount: number; payment_mode: string; paid_to: string; note: string; business: string; user_name: string | null }[]>`
       select e.id, to_char(e.expense_date, 'YYYY-MM-DD') as expense_date, e.category, e.amount, e.payment_mode, e.paid_to, e.note, e.business, u.name as user_name
       from expenses e left join users u on u.id = e.user_id
@@ -41,9 +41,14 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
     sql<{ total: number; n: number }[]>`
       select coalesce(sum(amount), 0) as total, count(*)::int as n from expenses e
       where expense_date between ${from} and ${to} ${filter}`,
-    sql<{ category: string }[]>`select category from expenses group by category order by count(*) desc, category limit 30`,
+    sql<{ category: string }[]>`
+      select category from expenses group by category
+      union
+      select name as category from expense_categories
+      order by category limit 50`,
     sql<{ business: string; total: number }[]>`
       select business, sum(amount) as total from expenses e where expense_date between ${from} and ${to} ${cat ? sql`and e.category = ${cat}` : sql``} group by 1`,
+    sql<{ name: string }[]>`select name from expense_categories order by name`,
   ]);
   const bizTotal = (b: string) => Number(byBusiness.find((x) => x.business === b)?.total ?? 0);
   const allTotal = byBusiness.reduce((s, x) => s + Number(x.total), 0);
@@ -133,7 +138,7 @@ export default async function ExpensesPage({ searchParams }: PageProps<"/expense
             )}
           </Card>
         </div>
-        <ExpenseForm usedCategories={recentCats.map((c) => c.category)} business={biz || undefined} />
+        <ExpenseForm usedCategories={recentCats.map((c) => c.category)} customCategories={customCats.map((c) => c.name)} business={biz || undefined} />
       </div>
     </>
   );

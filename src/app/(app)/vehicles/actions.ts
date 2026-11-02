@@ -8,8 +8,9 @@ import { requireUser } from "@/lib/auth";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { dateLabel } from "@/lib/format";
 import { sql } from "@/lib/db";
-import { DocError, issueVehicleDoc, type VehicleDocKind } from "@/lib/vehicle-docs";
+import { addDueNote, DocError, getDueNotes, issueVehicleDoc, markDueReceived, type VehicleDocKind } from "@/lib/vehicle-docs";
 import { DOC_CHECKLIST, EVENT_KINDS, INSURANCE_TYPES, normalizeReg, parseReg, PHOTO_KINDS } from "@/lib/regno";
+import { audit } from "@/lib/audit";
 
 type Tx = TransactionSql<Record<string, unknown>>;
 
@@ -120,6 +121,9 @@ export async function saveVehicle(id: number | null, _: VehicleState, f: FormDat
       })}`;
       return row.id;
     });
+    audit("vehicle", id ? "update" : "create",
+      id ? `Updated vehicle ${d.regNo} (${[d.make, d.model].filter(Boolean).join(" ")})` : `Added vehicle ${d.regNo} (${[d.make, d.model].filter(Boolean).join(" ")})`,
+      { entityId: vid, userId: user.uid, userName: user.name });
     revalidatePath("/vehicles");
     return { ok: "Saved.", id: vid };
   } catch (e) {
@@ -281,6 +285,9 @@ const saleSchema = z.object({
   exchangeValue: z.union([z.literal(""), z.coerce.number().min(0)])
     .transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
   exchangeBalanceMode: text(20),
+  amountPaidNow: z.union([z.literal(""), z.coerce.number().min(0)])
+    .transform((v) => (v === "" ? null : Number(v))).nullable().optional(),
+  dueDate: date,
   ...docFields, ...financeFields,
 });
 /** Marks the bike sold and issues its numbered sale invoice in the same step. */
@@ -291,6 +298,7 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
     exchangeRegNo: str(f, "exchangeRegNo"), exchangeMake: str(f, "exchangeMake"), exchangeModel: str(f, "exchangeModel"),
     exchangeYear: strOrNull(f, "exchangeYear"), exchangeValue: strOrNull(f, "exchangeValue"),
     exchangeBalanceMode: str(f, "exchangeBalanceMode"),
+    amountPaidNow: strOrNull(f, "amountPaidNow"), dueDate: strOrNull(f, "dueDate"),
     ...docFieldValues(f),
   });
   if (!r.success) return { error: r.error.issues[0]?.message ?? "Check the sale details." };
@@ -334,6 +342,9 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
         exchangeRegNo: isExchange ? normalizeReg(d.exchangeRegNo) : "",
         exchangeMakeModel, exchangeYear: isExchange ? d.exchangeYear : null,
         exchangeValue: isExchange ? d.exchangeValue : null, exchangeBalanceMode: isExchange ? d.exchangeBalanceMode : "",
+        amountPaidNow: d.amountPaidNow ?? null,
+        dueAmount: (d.amountPaidNow != null && d.amountPaidNow < d.price) ? d.price - d.amountPaidNow : null,
+        dueDate: d.dueDate ?? null,
       });
     });
   } catch (e) {
@@ -341,6 +352,8 @@ export async function markSold(vehicleId: number, _: VehicleState, f: FormData):
     console.error(e);
     return { error: "Could not save the sale. Please try again." };
   }
+  audit("vehicle", "sell", `Sold vehicle ${vehicleId} to ${d.buyer} for ₹${d.price.toLocaleString("en-IN")}`,
+    { entityId: vehicleId, userId: user.uid, userName: user.name });
   touch(vehicleId);
   // Straight to the new invoice, ready to print or share. (redirect() must run outside the try.)
   redirect(`/vehicles/${vehicleId}/documents/${doc.id}?new=1`);
@@ -394,19 +407,24 @@ export async function createVehicleDoc(vehicleId: number, kind: VehicleDocKind, 
 
 /** Owner only. The document keeps its number and shows CANCELLED. */
 export async function cancelVehicleDoc(vehicleId: number, docId: number, reason: string): Promise<VehicleState> {
-  await requireUser("owner");
+  const user = await requireUser("owner");
   await sql`update vehicle_invoices set status = 'cancelled', cancel_reason = ${reason.trim().slice(0, 200) || "Cancelled"}
             where id = ${docId} and vehicle_id = ${vehicleId} and status = 'issued'`;
+  audit("invoice", "cancel", `Cancelled invoice ${docId} for vehicle ${vehicleId}${reason ? `: ${reason.trim().slice(0, 80)}` : ""}`,
+    { entityId: docId, userId: user.uid, userName: user.name });
   touch(vehicleId);
   revalidatePath(`/vehicles/${vehicleId}/documents/${docId}`);
   return { ok: "Cancelled." };
 }
 
 export async function deleteVehicle(vehicleId: number): Promise<VehicleState> {
-  await requireUser("owner");
+  const user = await requireUser("owner");
   const [doc] = await sql<{ doc_no: string }[]>`select doc_no from vehicle_invoices where vehicle_id = ${vehicleId} limit 1`;
   if (doc) return { error: `This bike has invoices or receipts (${doc.doc_no}), so it can't be deleted. Issued documents are kept for your records.` };
+  const [v] = await sql<{ reg_no: string }[]>`select reg_no from vehicles where id = ${vehicleId}`;
   await sql`delete from vehicles where id = ${vehicleId}`;
+  audit("vehicle", "delete", `Deleted vehicle ${v?.reg_no ?? vehicleId}`,
+    { entityId: vehicleId, userId: user.uid, userName: user.name });
   revalidatePath("/vehicles");
   redirect("/vehicles?deleted=1");
 }
@@ -500,4 +518,28 @@ export async function deletePart(vehicleId: number, partId: number) {
     if (p?.event_id) await tx`delete from vehicle_events where id = ${p.event_id}`;
   });
   touch(vehicleId);
+}
+
+/* ---------- Pending dues ---------- */
+
+export async function addDueNoteAction(vehicleId: number, invoiceId: number, _: VehicleState, f: FormData): Promise<VehicleState> {
+  const user = await requireUser();
+  const note = String(f.get("note") ?? "").trim().slice(0, 500);
+  if (!note) return { error: "Enter a note." };
+  await addDueNote(invoiceId, note, user.uid);
+  audit("invoice", "note", `Added follow-up note on invoice ${invoiceId}`,
+    { entityId: invoiceId, userId: user.uid, userName: user.name });
+  touch(vehicleId);
+  revalidatePath(`/vehicles/${vehicleId}/documents/${invoiceId}`);
+  return { ok: "Note added.", key: Date.now() };
+}
+
+export async function markDueReceivedAction(vehicleId: number, invoiceId: number) {
+  const user = await requireUser();
+  await markDueReceived(invoiceId);
+  audit("invoice", "due_received", `Marked due amount received for invoice ${invoiceId}`,
+    { entityId: invoiceId, userId: user.uid, userName: user.name });
+  touch(vehicleId);
+  revalidatePath(`/vehicles/${vehicleId}/documents/${invoiceId}`);
+  revalidatePath("/collections");
 }

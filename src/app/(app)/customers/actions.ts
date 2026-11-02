@@ -4,9 +4,10 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { GSTIN_RE } from "@/lib/format";
+import { audit } from "@/lib/audit";
 
 export async function saveCustomer(id: number, _: { error?: string }, form: FormData): Promise<{ error?: string }> {
-  await requireUser();
+  const user = await requireUser();
   const name = String(form.get("name") ?? "").trim();
   const phone = String(form.get("phone") ?? "").replace(/\s/g, "");
   const gstin = String(form.get("gstin") ?? "").trim().toUpperCase();
@@ -21,5 +22,6 @@ export async function saveCustomer(id: number, _: { error?: string }, form: Form
     if (e && typeof e === "object" && "code" in e && e.code === "23505") return { error: `Another customer already has phone ${phone}.` };
     throw e;
   }
+  audit("customer", "update", `Updated customer ${name}`, { entityId: id, userId: user.uid, userName: user.name });
   redirect(`/customers/${id}?saved=1`);
 }

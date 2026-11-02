@@ -108,13 +108,18 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
   const [price, setPrice] = useState(ourPrice != null ? String(ourPrice) : "");
   const [mode, setMode] = useState("Cash");
   const [exValue, setExValue] = useState("");
+  const [paidNow, setPaidNow] = useState("");
   const below = minPrice != null && Number(price) > 0 && Number(price) < minPrice;
   const salePrice = parseFloat(price) || undefined;
   const numPrice = Number(price) || 0;
   const isExchange = mode === "Exchange";
+  const isFinance = mode === "Finance";
   const exNum = isExchange ? (parseFloat(exValue) || 0) : 0;
   const effectiveSale = numPrice - exNum;
   const profit = totalCost > 0 && numPrice > 0 ? effectiveSale - totalCost : null;
+  const paidNowNum = parseFloat(paidNow) || 0;
+  const dueNum = paidNowNum > 0 && paidNowNum < numPrice ? numPrice - paidNowNum : 0;
+  const showPartial = !isExchange && !isFinance;
   const fmt = (v: number) => "₹" + v.toLocaleString("en-IN");
   return (
     <form action={run} className="flex flex-col gap-3">
@@ -174,6 +179,26 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
                 {EXCHANGE_BALANCE_MODES.map((m) => <option key={m}>{m}</option>)}
               </Select>
             </Field>
+          </div>
+        )}
+        {showPartial && numPrice > 0 && (
+          <div className="col-span-2 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Amount paid now ₹" hint="Leave blank if full amount received">
+                <Input name="amountPaidNow" inputMode="decimal" value={paidNow} onChange={(e) => setPaidNow(e.target.value)} placeholder={fmt(numPrice)} />
+              </Field>
+              {dueNum > 0 && (
+                <Field label="Balance due by">
+                  <DatePicker name="dueDate" ariaLabel="Balance due by" />
+                </Field>
+              )}
+            </div>
+            {dueNum > 0 && (
+              <div className="rounded border border-warn/30 bg-warn-soft/40 px-3 py-2 text-[12.5px]">
+                <span className="text-ink-3">Balance due from buyer: </span>
+                <span className="font-semibold text-warn">{fmt(dueNum)}</span>
+              </div>
+            )}
           </div>
         )}
       </div>

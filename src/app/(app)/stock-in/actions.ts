@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { r2 } from "@/lib/billing-calc";
 import { sql } from "@/lib/db";
 import { applyStock } from "@/lib/invoices";
+import { audit } from "@/lib/audit";
 
 const input = z.object({
   supplier: z.string().trim().max(120),
@@ -48,6 +49,8 @@ export async function savePurchase(data: z.infer<typeof input>): Promise<{ ok: t
       }
       return p.id;
     });
+    audit("stock", "purchase", `Stock purchase from ${d.supplier || "supplier"}: ${d.items.length} item(s)${d.billRef ? `, bill ${d.billRef}` : ""}`,
+      { entityId: id, userId: user.uid, userName: user.name });
     revalidatePath("/products");
     return { ok: true, id };
   } catch (e) {

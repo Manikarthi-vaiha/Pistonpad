@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Banknote, Building2, CreditCard, Download, FileCheck2, Smartphone, Wallet } from "lucide-react";
+import { AlertCircle, Banknote, Building2, CreditCard, Download, FileCheck2, Smartphone, Wallet } from "lucide-react";
 import { DateRangePicker } from "@/components/DatePicker";
 import { buttonClass, Card, CardHeader, cx, Empty, PageHeader, Table, td, th } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { count, dateLabel, isoDate, rupees } from "@/lib/format";
 import { collectionsReport } from "@/lib/reports";
+import { getPendingDues } from "@/lib/vehicle-docs";
 
 export const metadata: Metadata = { title: "Money received" };
 
@@ -18,7 +19,7 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
   const today = isoDate();
   const from = ok(sp.from) ? sp.from : today;
   const to = ok(sp.to) ? sp.to : today;
-  const r = await collectionsReport(from, to);
+  const [r, pendingDues] = await Promise.all([collectionsReport(from, to), getPendingDues()]);
   const shown = r.methods.filter((m) => m.received || m.expenses || ["Cash", "UPI"].includes(m.mode));
   const cols = r.methods.filter((m) => m.received).map((m) => m.mode);
 
@@ -36,6 +37,64 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
           <DateRangePicker from={from} to={to} max={today} autoSubmit className="w-72 max-w-full" />
         </form>
       </Card>
+
+      {pendingDues.length > 0 && (
+        <Card className="mb-5">
+          <CardHeader
+            title={`Pending dues (${pendingDues.length})`}
+            sub={`₹${pendingDues.reduce((s, d) => s + Number(d.due_amount), 0).toLocaleString("en-IN")} outstanding from buyers`}
+          />
+          <Table>
+            <thead>
+              <tr>
+                <th className={th}>Customer</th>
+                <th className={th}>Bike</th>
+                <th className={`${th} text-right`}>Due amount</th>
+                <th className={th}>Due date</th>
+                <th className={th}>Latest note</th>
+                <th className={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingDues.map((d) => {
+                const isOverdue = d.due_date && new Date(d.due_date) < new Date();
+                return (
+                  <tr key={d.invoice_id} className="hover:bg-surface-2">
+                    <td className={td}>
+                      <p className="font-semibold">{d.party_name}</p>
+                      {d.party_phone && <p className="text-xs text-ink-3">{d.party_phone}</p>}
+                    </td>
+                    <td className={td}>
+                      <p>{d.bike_name}</p>
+                      <p className="font-mono text-xs text-ink-3">{d.reg_no}</p>
+                    </td>
+                    <td className={`${td} text-right font-semibold tabular-nums`}>{rupees(Number(d.due_amount))}</td>
+                    <td className={td}>
+                      {d.due_date ? (
+                        <span className={cx("flex items-center gap-1 text-[13px]", isOverdue && "font-semibold text-red-500")}>
+                          {isOverdue && <AlertCircle className="h-3.5 w-3.5 shrink-0" />}
+                          {dateLabel(d.due_date)}
+                        </span>
+                      ) : <span className="text-ink-3">—</span>}
+                    </td>
+                    <td className={cx(td, "max-w-[200px] truncate text-[13px] text-ink-3")}>
+                      {d.latest_note ?? <span className="italic">No notes yet</span>}
+                    </td>
+                    <td className={td}>
+                      <Link
+                        href={`/vehicles/${d.vehicle_id}/documents/${d.invoice_id}`}
+                        className="text-xs font-semibold text-primary hover:underline"
+                      >
+                        View
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </Table>
+        </Card>
+      )}
 
       <div className="mb-5 rounded-xl border border-transparent bg-primary p-6 text-primary-ink">
         <p className="text-[13px] font-medium opacity-85">Total received</p>

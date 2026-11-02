@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth";
 import { sql } from "@/lib/db";
 import { applyStock } from "@/lib/invoices";
+import { audit } from "@/lib/audit";
 
 export type FormState = { error?: string; ok?: boolean; id?: number };
 
@@ -46,7 +47,7 @@ export async function saveProduct(id: number | null, _: FormState, form: FormDat
   if (!r.success) return { error: r.error.issues[0]?.message ?? "Check the highlighted fields." };
   const d = r.data;
   if (d.salePrice < d.costPrice && user.role === "owner" && form.get("confirmLoss") !== "yes")
-    return { error: "The selling rate is below the cost price. Tick “Sell below cost” if that's intended." };
+    return { error: "The selling rate is below the cost price. Tick 'Sell below cost' if that's intended." };
 
   try {
     const newId = await sql.begin(async (tx) => {
@@ -69,10 +70,13 @@ export async function saveProduct(id: number | null, _: FormState, form: FormDat
       }
       return pid;
     });
+    audit("product", id ? "update" : "create",
+      id ? `Updated part ${d.sku} (${d.name})` : `Added part ${d.sku} (${d.name})`,
+      { entityId: newId, userId: user.uid, userName: user.name });
     revalidatePath("/products");
     return { ok: true, id: newId };
   } catch (e) {
-    if (e && typeof e === "object" && "code" in e && e.code === "23505") return { error: `Part number “${d.sku}” already exists.` };
+    if (e && typeof e === "object" && "code" in e && e.code === "23505") return { error: `Part number "${d.sku}" already exists.` };
     console.error(e);
     return { error: "Could not save the part. Please try again." };
   }
@@ -88,6 +92,8 @@ export async function adjustStock(productId: number, change: number, reason: "ad
       if (p.stock + change < 0) throw new RangeError(`Only ${p.stock} in stock — you can't remove ${-change}.`);
       await applyStock(tx, [{ id: productId, change }], reason, null, user.uid, note);
     });
+    audit("stock", "adjust", `Stock adjusted by ${change > 0 ? "+" : ""}${change} for product ${productId}${note ? `: ${note}` : ""}`,
+      { entityId: productId, userId: user.uid, userName: user.name });
     revalidatePath(`/products/${productId}`);
     return { ok: true };
   } catch (e) {

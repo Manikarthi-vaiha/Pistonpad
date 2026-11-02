@@ -44,6 +44,8 @@ export type VehicleDocInput = {
   // Exchange deal (sale only)
   exchangeRegNo?: string; exchangeMakeModel?: string; exchangeYear?: number | null;
   exchangeValue?: number | null; exchangeBalanceMode?: string;
+  // Partial payment / credit sale (sale only)
+  amountPaidNow?: number | null; dueAmount?: number | null; dueDate?: string | null;
 };
 
 /** "2026-10-23" + "16:35" in Indian time. */
@@ -114,6 +116,9 @@ export async function issueVehicleDoc(tx: Tx, input: VehicleDocInput) {
       exchange_year: input.exchangeYear ?? null,
       exchange_value: input.exchangeValue ?? null,
       exchange_balance_mode: input.exchangeBalanceMode ?? "",
+      amount_paid_now: input.amountPaidNow ?? null,
+      due_amount: input.dueAmount ?? null,
+      due_date: input.dueDate ?? null,
     })}
     returning id, doc_no`;
   return doc;
@@ -133,6 +138,7 @@ export type VehicleDoc = {
   buyer_doc_charge: number | null; buyer_processing_fee: number | null;
   exchange_reg_no: string; exchange_make_model: string; exchange_year: number | null;
   exchange_value: number | null; exchange_balance_mode: string;
+  amount_paid_now: number | null; due_amount: number | null; due_date: string | null; due_received_on: string | null;
 };
 export type DocShop = {
   shop_name: string; address: string; phone: string; email: string; gstin: string; logo: Buffer | null; logo_type: string | null; logo_version: number;
@@ -241,11 +247,16 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
     }
   }
   const hasExchange = sale && doc.exchange_value != null && Number(doc.exchange_value) > 0;
+  const hasPartial = sale && doc.amount_paid_now != null && doc.due_amount != null && Number(doc.due_amount) > 0;
   if (hasExchange) {
     const exDesc = [doc.exchange_make_model, doc.exchange_reg_no, doc.exchange_year ? `(${doc.exchange_year})` : ""].filter(Boolean).join(" · ");
     rows.push([`Exchange allowance (${exDesc})`, `− ${money(Number(doc.exchange_value))}`]);
     const balance = doc.price - Number(doc.exchange_value);
     if (balance > 0) rows.push([`Balance paid by ${doc.exchange_balance_mode || "buyer"}`, money(balance)]);
+  } else if (hasPartial) {
+    rows.push([`Paid now (${doc.payment_mode || "Cash"})`, money(Number(doc.amount_paid_now))]);
+    const dueLabel = doc.due_date ? `Balance due from buyer (by ${day(doc.due_date)})` : "Balance due from buyer";
+    rows.push([dueLabel, money(Number(doc.due_amount))]);
   } else if (!hasBuyerFinance && doc.payment_mode) {
     rows.push([sale ? "Paid by" : "Paid to the seller by", doc.payment_mode]);
   }
@@ -275,6 +286,47 @@ export function buildDocModel(doc: VehicleDoc, shop: DocShop): DocModel {
       : [{ label: "Seller's signature", name: doc.party_name }, { label: `For ${shop.shop_name}`, name: "Authorised signatory" }],
     shop: { name: shop.shop_name, address: shop.address, contact: [shop.phone && `Ph: ${shop.phone}`, shop.email].filter(Boolean).join(" · "), gstin: shop.gstin },
   };
+}
+
+/* ---------- Pending dues ---------- */
+
+export type DueNote = { id: number; note: string; created_at: Date; user_name: string | null };
+
+export async function getDueNotes(invoiceId: number): Promise<DueNote[]> {
+  return sql<DueNote[]>`
+    select n.id, n.note, n.created_at, u.name as user_name
+    from vehicle_due_notes n left join users u on u.id = n.user_id
+    where n.invoice_id = ${invoiceId} order by n.created_at asc`;
+}
+
+export async function addDueNote(invoiceId: number, note: string, userId: number) {
+  await sql`insert into vehicle_due_notes ${sql({ invoice_id: invoiceId, note, user_id: userId })}`;
+}
+
+export async function markDueReceived(invoiceId: number) {
+  await sql`update vehicle_invoices set due_received_on = current_date where id = ${invoiceId}`;
+}
+
+export type PendingDue = {
+  invoice_id: number; vehicle_id: number; doc_no: string; doc_date: string;
+  party_name: string; party_phone: string;
+  due_amount: number; due_date: string | null;
+  reg_no: string; bike_name: string;
+  latest_note: string | null; latest_note_at: Date | null;
+};
+
+export async function getPendingDues(): Promise<PendingDue[]> {
+  return sql<PendingDue[]>`
+    select d.id as invoice_id, d.vehicle_id, d.doc_no, to_char(d.doc_date, 'YYYY-MM-DD') as doc_date,
+           d.party_name, d.party_phone, d.due_amount, to_char(d.due_date, 'YYYY-MM-DD') as due_date,
+           d.bike->>'reg_no' as reg_no,
+           trim(concat_ws(' ', d.bike->>'make', d.bike->>'model', d.bike->>'variant')) as bike_name,
+           (select n.note from vehicle_due_notes n where n.invoice_id = d.id order by n.created_at desc limit 1) as latest_note,
+           (select n.created_at from vehicle_due_notes n where n.invoice_id = d.id order by n.created_at desc limit 1) as latest_note_at
+    from vehicle_invoices d
+    where d.kind = 'sale' and d.status = 'issued'
+      and d.due_amount > 0 and d.due_received_on is null
+    order by d.due_date asc nulls last, d.doc_date asc`;
 }
 
 export type VehicleDocRow = {

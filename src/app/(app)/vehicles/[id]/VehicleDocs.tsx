@@ -1,14 +1,15 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
-import { Ban, Check, FileDown, Info, Loader2, MessageCircle, Printer, Share2 } from "lucide-react";
+import { Ban, Check, CheckCircle2, FileDown, Info, Loader2, MessageCircle, Printer, Share2 } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
 import { Button, cx, Field, Input, Notice, Select } from "@/components/ui";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { isoDate } from "@/lib/format";
 import type { Financier } from "@/lib/financiers";
+import type { DueNote } from "@/lib/vehicle-docs";
 import { DOC_CHECKLIST } from "@/lib/regno";
-import { cancelVehicleDoc, createVehicleDoc, type VehicleState } from "../actions";
+import { addDueNoteAction, cancelVehicleDoc, createVehicleDoc, markDueReceivedAction, type VehicleState } from "../actions";
 
 /** Tap to tick the papers handed over (sale) or received (purchase). Starts with the papers the shop holds. */
 export function PapersPicker({ initial, label }: { initial: string[]; label: string }) {
@@ -388,6 +389,98 @@ export function DocActions({ vehicleId, docId, pdfPath, phone, shareText, cancel
         </form>
       ) : null}
       {error ? <Notice tone="bad">{error}</Notice> : null}
+    </div>
+  );
+}
+
+/** Pending due + follow-up notes panel shown on a sale invoice when partial payment was used. */
+export function DueSection({
+  vehicleId, invoiceId, dueAmount, dueDate, dueReceivedOn, initialNotes,
+}: {
+  vehicleId: number; invoiceId: number; dueAmount: number;
+  dueDate: string | null; dueReceivedOn: string | null; initialNotes: DueNote[];
+}) {
+  const [notes, setNotes] = useState<DueNote[]>(initialNotes);
+  const [pending, startTransition] = useTransition();
+
+  const boundAdd = addDueNoteAction.bind(null, vehicleId, invoiceId);
+  const [addState, addAction] = useActionState(boundAdd, {});
+
+  // optimistic note append after server confirm
+  const prevKey = useMemo(() => addState.key, [addState]);
+  useState(() => {
+    if (addState.ok && addState.key !== prevKey) {
+      // notes will refresh on revalidatePath; do nothing extra
+    }
+  });
+
+  const received = !!dueReceivedOn;
+  const overdue = !received && dueDate && new Date(dueDate) < new Date();
+
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-warn/40 bg-warn-soft/20 p-4">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-warn">
+            {received ? "Balance received" : "Balance due from buyer"}
+          </p>
+          <p className={cx("mt-0.5 text-xl font-bold tabular-nums", received ? "text-ink-3 line-through" : "text-warn")}>
+            ₹{dueAmount.toLocaleString("en-IN")}
+          </p>
+          {dueDate && !received && (
+            <p className={cx("mt-0.5 text-[12px]", overdue ? "font-semibold text-red-500" : "text-ink-3")}>
+              {overdue ? "Overdue — was due " : "Due by "}
+              {new Date(dueDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+            </p>
+          )}
+          {received && dueReceivedOn && (
+            <p className="mt-0.5 text-[12px] text-ink-3">
+              Received on {new Date(dueReceivedOn).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+            </p>
+          )}
+        </div>
+        {!received && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              startTransition(async () => {
+                await markDueReceivedAction(vehicleId, invoiceId);
+              })
+            }
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+          >
+            {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            Mark received
+          </button>
+        )}
+      </div>
+
+      {/* Notes log */}
+      {notes.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-3">Follow-up notes</p>
+          {notes.map((n) => (
+            <div key={n.id} className="rounded-lg bg-surface px-3 py-2 text-[13px]">
+              <p className="text-ink">{n.note}</p>
+              <p className="mt-0.5 text-[11px] text-ink-3">
+                {n.user_name ?? "Staff"} ·{" "}
+                {new Date(n.created_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add note form */}
+      {!received && (
+        <form action={addAction} className="flex gap-2">
+          <Input name="note" placeholder="Add a follow-up note…" className="flex-1 text-[13px]" />
+          <Button type="submit" variant="secondary" size="sm">Add</Button>
+        </form>
+      )}
+      {addState.error && <p className="text-[12px] text-red-500">{addState.error}</p>}
     </div>
   );
 }
