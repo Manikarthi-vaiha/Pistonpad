@@ -1,7 +1,7 @@
 "use client";
 
-import { useActionState, useTransition } from "react";
-import { Button, Field, Input, Notice } from "@/components/ui";
+import { useActionState, useState, useTransition } from "react";
+import { Button, ConfirmDialog, Field, Input, Notice } from "@/components/ui";
 import type { Financier } from "@/lib/financiers";
 import { deleteFinancierAction, saveFinancierAction, toggleFinancier, type FinancierState } from "./actions";
 
@@ -38,14 +38,15 @@ export function ToggleActive({ id, active }: { id: number; active: boolean }) {
 
 export function DeleteFinancier({ id }: { id: number }) {
   const [state, run, pending] = useActionState<FinancierState, FormData>(deleteFinancierAction.bind(null, id), {});
+  const [open, setOpen] = useState(false);
   return (
-    <form action={run} className="inline">
+    <>
+      <ConfirmDialog open={open} title="Delete this financier?" message="This cannot be undone." confirmLabel="Delete" onConfirm={() => { setOpen(false); const fd = new FormData(); run(fd); }} onCancel={() => setOpen(false)} />
       {state.error ? <span className="text-xs text-bad">{state.error}</span> : null}
-      <button type="submit" disabled={pending}
-        onClick={(e) => { if (!confirm("Delete this financier? This cannot be undone.")) e.preventDefault(); }}
+      <button type="button" disabled={pending} onClick={() => setOpen(true)}
         className="text-[13px] font-semibold text-bad hover:underline disabled:opacity-50">
         {pending ? "Deleting…" : "Delete"}
       </button>
-    </form>
+    </>
   );
 }

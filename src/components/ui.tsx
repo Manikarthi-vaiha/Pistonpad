@@ -137,3 +137,22 @@ export const td = "border-b border-line px-4 py-3 align-middle";
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="rounded border border-line-2 bg-surface-2 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">{children}</kbd>;
 }
+
+export function ConfirmDialog({ open, title, message, confirmLabel = "Confirm", variant = "danger" as Variant, onConfirm, onCancel }: {
+  open: boolean; title: string; message?: ReactNode; confirmLabel?: string; variant?: Variant;
+  onConfirm: () => void; onCancel: () => void;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-xl border border-line bg-surface p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <p className="font-semibold text-ink">{title}</p>
+        {message && <p className="mt-1.5 text-sm text-ink-2">{message}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button variant={variant} size="sm" onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}

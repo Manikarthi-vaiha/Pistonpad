@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { Check, Plus, RotateCcw, Trash2, Wrench, X } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
-import { Button, Field, Input, Notice, Select } from "@/components/ui";
+import { Button, ConfirmDialog, Field, Input, Notice, Select } from "@/components/ui";
 import { isoDate } from "@/lib/format";
 import { COMMON_PARTS, EVENT_KINDS, PART_STATUS, VEHICLE_STATUS } from "@/lib/regno";
 import {
@@ -230,11 +230,15 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
 
 export function StatusButtons({ vehicleId, status }: { vehicleId: number; status: string }) {
   const [pending, start] = useTransition();
+  const [confirmUndo, setConfirmUndo] = useState(false);
   if (status === "sold") {
     return (
-      <Button size="sm" disabled={pending} onClick={() => { if (confirm("Undo the sale and put this bike back in stock?")) start(() => setVehicleStatus(vehicleId, "in_stock")); }}>
-        <RotateCcw className="h-3.5 w-3.5" /> Undo sale
-      </Button>
+      <>
+        <ConfirmDialog open={confirmUndo} title="Undo sale?" message="This will put the bike back in stock." confirmLabel="Undo sale" variant="secondary" onConfirm={() => { setConfirmUndo(false); start(() => setVehicleStatus(vehicleId, "in_stock")); }} onCancel={() => setConfirmUndo(false)} />
+        <Button size="sm" disabled={pending} onClick={() => setConfirmUndo(true)}>
+          <RotateCcw className="h-3.5 w-3.5" /> Undo sale
+        </Button>
+      </>
     );
   }
   const options = (["in_stock", "reserved", "in_service"] as const).filter((s) => s !== status);
@@ -271,25 +275,31 @@ export function RemoveOwner({ vehicleId, ownerId }: { vehicleId: number; ownerId
 
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => Promise<void> }) {
   const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
   return (
-    <button type="button" disabled={pending} aria-label={`Remove ${label}`} title="Remove"
-      onClick={() => { if (confirm(`Remove ${label}?`)) start(onRemove); }}
-      className="rounded-md p-1.5 text-ink-3 hover:bg-bad-soft hover:text-bad disabled:opacity-40">
-      <Trash2 className="h-3.5 w-3.5" />
-    </button>
+    <>
+      <ConfirmDialog open={open} title={`Remove ${label}?`} confirmLabel="Remove" onConfirm={() => { setOpen(false); start(onRemove); }} onCancel={() => setOpen(false)} />
+      <button type="button" disabled={pending} aria-label={`Remove ${label}`} title="Remove"
+        onClick={() => setOpen(true)}
+        className="rounded-md p-1.5 text-ink-3 hover:bg-bad-soft hover:text-bad disabled:opacity-40">
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </>
   );
 }
 
 export function DeleteVehicle({ vehicleId, reg }: { vehicleId: number; reg: string }) {
   const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState("");
   return (
-    <Button size="sm" variant="danger" disabled={pending}
-      onClick={() => {
-        if (!confirm(`Delete ${reg} with all its owners, fines and history? This can't be undone.`)) return;
-        start(async () => { const r = await deleteVehicle(vehicleId); if (r?.error) alert(r.error); });
-      }}>
-      <Trash2 className="h-3.5 w-3.5" /> Delete
-    </Button>
+    <>
+      <ConfirmDialog open={open} title={`Delete ${reg}?`} message="This will permanently remove the bike with all its owners, fines and history. This can't be undone." confirmLabel="Delete" onConfirm={() => { setOpen(false); start(async () => { const r = await deleteVehicle(vehicleId); if (r?.error) setError(r.error); }); }} onCancel={() => setOpen(false)} />
+      {error && <Notice tone="bad">{error}</Notice>}
+      <Button size="sm" variant="danger" disabled={pending} onClick={() => setOpen(true)}>
+        <Trash2 className="h-3.5 w-3.5" /> Delete
+      </Button>
+    </>
   );
 }
 

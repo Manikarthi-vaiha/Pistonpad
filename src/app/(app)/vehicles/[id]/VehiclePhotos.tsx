@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { Camera, ChevronLeft, ChevronRight, ImagePlus, Loader2, Trash2, X } from "lucide-react";
-import { Button, cx, Notice } from "@/components/ui";
+import { Button, ConfirmDialog, cx, Notice } from "@/components/ui";
 import { PHOTO_KINDS } from "@/lib/regno";
 import { deletePhoto, uploadPhoto } from "../actions";
 
@@ -38,12 +38,13 @@ function useUploader(vehicleId: number) {
     setError(null);
     const list = [...files].filter((f) => f.type.startsWith("image/")).slice(0, 20);
     for (let i = 0; i < list.length; i++) {
+      if (list[i].size > 2 * 1024 * 1024) { setError(`"${list[i].name}" is over 2 MB. Please use a smaller photo.`); break; }
       setProgress(list.length > 1 ? `Uploading ${i + 1} of ${list.length}…` : "Uploading…");
       try {
         const r = await send(vehicleId, list[i], kind);
         if (r.error) { setError(r.error); break; }
       } catch {
-        setError(`Couldn't read “${list[i].name}”. Try a JPG or PNG photo.`);
+        setError(`Couldn't read "${list[i].name}". Try a JPG or PNG photo.`);
         break;
       }
     }
@@ -101,6 +102,7 @@ export function VehiclePhotos({ vehicleId, photos }: { vehicleId: number; photos
         </Button>
         <input ref={input} type="file" accept="image/*" multiple hidden
           onChange={(e) => { const files = e.target.files; upload(files, kind).then(() => { if (input.current) input.current.value = ""; }); }} />
+        <span className="text-xs text-ink-3">JPG, PNG or WebP · max 2 MB per photo · auto-resized before upload</span>
       </div>
       {error ? <div className="mt-3"><Notice tone="bad">{error}</Notice></div> : null}
       {open != null && gallery[open] ? <Lightbox vehicleId={vehicleId} photos={gallery} index={open} onIndex={setOpen} /> : null}
@@ -110,6 +112,7 @@ export function VehiclePhotos({ vehicleId, photos }: { vehicleId: number; photos
 
 function Lightbox({ vehicleId, photos, index, onIndex }: { vehicleId: number; photos: Photo[]; index: number; onIndex: (i: number | null) => void }) {
   const [pending, start] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const p = photos[index];
   const go = (d: number) => onIndex((index + d + photos.length) % photos.length);
   useEffect(() => {
@@ -124,11 +127,12 @@ function Lightbox({ vehicleId, photos, index, onIndex }: { vehicleId: number; ph
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black/90" role="dialog" aria-modal="true" aria-label="Photo viewer" onClick={() => onIndex(null)}>
+      <ConfirmDialog open={confirmDelete} title="Delete this photo?" confirmLabel="Delete" onConfirm={() => { setConfirmDelete(false); start(async () => { await deletePhoto(vehicleId, p.id); onIndex(photos.length > 1 ? Math.min(index, photos.length - 2) : null); }); }} onCancel={() => setConfirmDelete(false)} />
       <div className="flex items-center justify-between gap-3 p-3 text-sm text-white" onClick={(e) => e.stopPropagation()}>
         <span>{PHOTO_KINDS[p.kind]} · {index + 1} of {photos.length}</span>
         <div className="flex gap-1">
           <button type="button" disabled={pending} aria-label="Delete photo" className="rounded-lg p-2 hover:bg-white/10 disabled:opacity-40"
-            onClick={() => { if (confirm("Delete this photo?")) start(async () => { await deletePhoto(vehicleId, p.id); onIndex(photos.length > 1 ? Math.min(index, photos.length - 2) : null); }); }}>
+            onClick={() => setConfirmDelete(true)}>
             <Trash2 className="h-5 w-5" />
           </button>
           <button type="button" aria-label="Close" className="rounded-lg p-2 hover:bg-white/10" onClick={() => onIndex(null)}><X className="h-5 w-5" /></button>
