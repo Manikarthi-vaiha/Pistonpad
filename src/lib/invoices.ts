@@ -175,6 +175,22 @@ export async function receivePayment(invoiceId: number, amount: number, mode: st
   });
 }
 
+export type PendingPartsDue = {
+  invoice_id: number; invoice_no: string; invoice_date: string;
+  customer_name: string; customer_phone: string;
+  due_amount: number;
+};
+
+export async function getPendingPartsDues(): Promise<PendingPartsDue[]> {
+  return sql<PendingPartsDue[]>`
+    select id as invoice_id, invoice_no, to_char(created_at, 'YYYY-MM-DD') as invoice_date,
+           customer_name, customer_phone,
+           (total - amount_paid) as due_amount
+    from invoices
+    where status in ('due', 'partial') and total > amount_paid
+    order by created_at asc`;
+}
+
 export async function cancelInvoice(invoiceId: number, reason: string, userId: number) {
   return sql.begin(async (tx) => {
     const [inv] = await tx<{ status: string; invoice_no: string }[]>`select status, invoice_no from invoices where id = ${invoiceId} for update`;

@@ -114,12 +114,13 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
   const numPrice = Number(price) || 0;
   const isExchange = mode === "Exchange";
   const isFinance = mode === "Finance";
+  const isPayLater = mode === "Pay Later";
   const exNum = isExchange ? (parseFloat(exValue) || 0) : 0;
   const effectiveSale = numPrice - exNum;
   const profit = totalCost > 0 && numPrice > 0 ? effectiveSale - totalCost : null;
   const paidNowNum = parseFloat(paidNow) || 0;
-  const dueNum = paidNowNum > 0 && paidNowNum < numPrice ? numPrice - paidNowNum : 0;
-  const showPartial = !isExchange && !isFinance;
+  const dueNum = isPayLater ? numPrice : (paidNowNum > 0 && paidNowNum < numPrice ? numPrice - paidNowNum : 0);
+  const showPartial = !isExchange && !isFinance && !isPayLater;
   const fmt = (v: number) => "₹" + v.toLocaleString("en-IN");
   return (
     <form action={run} className="flex flex-col gap-3">
@@ -178,6 +179,17 @@ export function SellForm({ vehicleId, ourPrice, minPrice, buyerLoan, nowTime, od
               <Select name="exchangeBalanceMode" defaultValue="Cash">
                 {EXCHANGE_BALANCE_MODES.map((m) => <option key={m}>{m}</option>)}
               </Select>
+            </Field>
+          </div>
+        )}
+        {isPayLater && numPrice > 0 && (
+          <div className="col-span-2 space-y-3">
+            <input type="hidden" name="amountPaidNow" value="0" />
+            <div className="rounded-lg border border-warn/40 bg-warn-soft/30 px-3 py-2.5 text-[13px] text-warn">
+              Customer will pay later — {fmt(numPrice)} will be recorded as <strong>Payment Due</strong>.
+            </div>
+            <Field label="Balance due by">
+              <DatePicker name="dueDate" ariaLabel="Balance due by" />
             </Field>
           </div>
         )}

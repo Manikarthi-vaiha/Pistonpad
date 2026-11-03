@@ -5,6 +5,7 @@ import { DateRangePicker } from "@/components/DatePicker";
 import { buttonClass, Card, CardHeader, cx, Empty, PageHeader, Table, td, th } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { count, dateLabel, isoDate, rupees } from "@/lib/format";
+import { getPendingPartsDues } from "@/lib/invoices";
 import { collectionsReport } from "@/lib/reports";
 import { getPendingDues } from "@/lib/vehicle-docs";
 
@@ -13,13 +14,13 @@ export const metadata: Metadata = { title: "Money received" };
 const ICON: Record<string, React.ElementType> = { Cash: Banknote, UPI: Smartphone, Card: CreditCard, Bank: Building2, Cheque: FileCheck2 };
 
 export default async function CollectionsPage({ searchParams }: PageProps<"/collections">) {
-  await requireUser("owner");
+  const user = await requireUser("owner");
   const sp = await searchParams;
   const ok = (v: unknown): v is string => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
   const today = isoDate();
   const from = ok(sp.from) ? sp.from : today;
   const to = ok(sp.to) ? sp.to : today;
-  const [r, pendingDues] = await Promise.all([collectionsReport(from, to), getPendingDues()]);
+  const [r, pendingDues, pendingPartsDues] = await Promise.all([collectionsReport(from, to, user.branchId), getPendingDues(), getPendingPartsDues()]);
   const shown = r.methods.filter((m) => m.received || m.expenses || ["Cash", "UPI"].includes(m.mode));
   const cols = r.methods.filter((m) => m.received).map((m) => m.mode);
 
@@ -91,6 +92,43 @@ export default async function CollectionsPage({ searchParams }: PageProps<"/coll
                   </tr>
                 );
               })}
+            </tbody>
+          </Table>
+        </Card>
+      )}
+
+      {pendingPartsDues.length > 0 && (
+        <Card className="mb-5">
+          <CardHeader
+            title={`Parts pending dues (${pendingPartsDues.length})`}
+            sub={`${rupees(pendingPartsDues.reduce((s, d) => s + Number(d.due_amount), 0))} outstanding from customers`}
+          />
+          <Table>
+            <thead>
+              <tr>
+                <th className={th}>Invoice</th>
+                <th className={th}>Customer</th>
+                <th className={`${th} text-right`}>Due amount</th>
+                <th className={th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingPartsDues.map((d) => (
+                <tr key={d.invoice_id} className="hover:bg-surface-2">
+                  <td className={td}>
+                    <p className="font-semibold font-mono text-[13px]">{d.invoice_no}</p>
+                    <p className="text-xs text-ink-3">{dateLabel(d.invoice_date)}</p>
+                  </td>
+                  <td className={td}>
+                    <p className="font-semibold">{d.customer_name}</p>
+                    {d.customer_phone && <p className="text-xs text-ink-3">{d.customer_phone}</p>}
+                  </td>
+                  <td className={`${td} text-right font-semibold tabular-nums`}>{rupees(Number(d.due_amount))}</td>
+                  <td className={td}>
+                    <Link href={`/invoices/${d.invoice_id}`} className="text-xs font-semibold text-primary hover:underline">View</Link>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </Table>
         </Card>
