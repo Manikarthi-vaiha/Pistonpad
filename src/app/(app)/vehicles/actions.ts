@@ -424,7 +424,7 @@ export async function deleteVehicleDocAction(vehicleId: number, docId: number): 
     await hardDeleteVehicleDoc(docId);
     audit("invoice", "delete", `Permanently deleted vehicle doc ${docId} for vehicle ${vehicleId}`,
       { entityId: docId, userId: user.uid, userName: user.name });
-    revalidatePath(`/vehicles/${vehicleId}`);
+    revalidatePath("/", "layout");
     redirect(`/vehicles/${vehicleId}`);
   } catch (e) {
     if (e instanceof Error && e.message === "NEXT_REDIRECT") throw e;

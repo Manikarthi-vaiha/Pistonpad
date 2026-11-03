@@ -50,7 +50,7 @@ export async function deleteInvoicePermanently(invoiceId: number): Promise<Actio
   const user = await requireUser("super_admin");
   try {
     await hardDeleteInvoice(invoiceId, user.uid);
-    revalidatePath("/invoices");
+    revalidatePath("/", "layout");
     return { ok: true, data: null };
   } catch (e) {
     return fail(e);
