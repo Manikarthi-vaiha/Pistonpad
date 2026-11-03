@@ -140,9 +140,8 @@ export function FinanceSection({ financiers, salePrice }: { financiers: Financie
             placeholder={price > 0 ? `e.g. ${Math.round(price * 0.3).toLocaleString("en-IN")}` : "0"} />
         </Field>
         <Field label="Tenure (months)" hint={emi ? `EMI ≈ ₹${emi.toLocaleString("en-IN")}/month` : undefined}>
-          <Select name="buyerTenureMonths" value={tenure} onChange={(e) => setTenure(e.target.value)}>
-            {[6, 12, 18, 24, 30, 36, 48, 60, 72, 84].map((n) => <option key={n} value={String(n)}>{n} months</option>)}
-          </Select>
+          <Input name="buyerTenureMonths" type="number" inputMode="numeric" min="1" max="360"
+            value={tenure} onChange={(e) => setTenure(e.target.value)} required placeholder="e.g. 24" />
         </Field>
         <Field label="Interest rate (%)" hint="Annual rate for EMI calculation">
           <Input name="buyerInterestRate" inputMode="decimal" value={interestRate}

@@ -6,7 +6,8 @@ import { calcBill, r2 } from "./billing-calc";
 import { financialYear, GSTIN_RE } from "./format";
 
 // New bills are paid in full; "Credit" is no longer offered (older credit bills keep their mode).
-export const PAYMENT_MODES = ["Cash", "UPI", "Card", "Bank"] as const;
+// "Pay Later" records the full amount as due — customer pays after receiving the goods.
+export const PAYMENT_MODES = ["Cash", "UPI", "Card", "Bank", "Pay Later"] as const;
 
 export const invoiceInput = z.object({
   customer: z.object({
@@ -43,7 +44,7 @@ export class BillError extends Error {}
  * locks the parts, checks stock, numbers the invoice per financial year (gap-free),
  * writes items, reduces stock, records stock movements and the payment.
  */
-export async function createInvoice(input: InvoiceInput, userId: number) {
+export async function createInvoice(input: InvoiceInput, userId: number, branchId = 1) {
   const data = invoiceInput.parse(input);
   if (data.customer.gstin && !GSTIN_RE.test(data.customer.gstin)) throw new BillError("The customer GSTIN doesn't look right. It should be 15 characters, like 33ABCDE1234F1Z5.");
 
@@ -79,7 +80,7 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
       return { it, p, calcIn: { qty: it.qty, rate: it.rate, discountPct: it.discountPct, gstRate: p.gst_rate, cost: unitCost } };
     });
     const bill = calcBill(lines.map((l) => l.calcIn), data.interstate);
-    if (r2(data.amountPaid) < bill.total) throw new BillError(`Collect the full amount of ₹${bill.total} before saving — bills can't be left on credit.`);
+    if (data.paymentMode !== "Pay Later" && r2(data.amountPaid) < bill.total) throw new BillError(`Collect the full amount of ₹${bill.total} before saving — bills can't be left on credit.`);
 
     // Customer: existing id, or find/create by phone, or walk-in
     let customerId: number | null = data.customer.id ?? null;
@@ -92,31 +93,34 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
       const phone = data.customer.phone.replace(/\s/g, "") || null;
       const [c] = phone
         ? await tx<{ id: number }[]>`
-            insert into customers (name, phone, gstin, state_code)
-            values (${customerName}, ${phone}, ${data.customer.gstin}, ${data.customer.gstin.slice(0, 2)})
+            insert into customers (name, phone, gstin, state_code, branch_id)
+            values (${customerName}, ${phone}, ${data.customer.gstin}, ${data.customer.gstin.slice(0, 2)}, ${branchId})
             on conflict (phone) where phone is not null and phone <> '' do update set
               gstin = case when excluded.gstin <> '' then excluded.gstin else customers.gstin end
             returning id`
         : await tx<{ id: number }[]>`
-            insert into customers (name, gstin, state_code) values (${customerName}, ${data.customer.gstin}, ${data.customer.gstin.slice(0, 2)})
+            insert into customers (name, gstin, state_code, branch_id) values (${customerName}, ${data.customer.gstin}, ${data.customer.gstin.slice(0, 2)}, ${branchId})
             returning id`;
       customerId = c.id;
     }
 
-    const paid = Math.min(r2(data.amountPaid), bill.total);
+    const paid = data.paymentMode === "Pay Later" ? 0 : Math.min(r2(data.amountPaid), bill.total);
     const status = paid >= bill.total ? "paid" : paid > 0 ? "partial" : "due";
     const fy = financialYear();
     const [{ last_seq: seq }] = await tx<{ last_seq: number }[]>`
-      insert into invoice_counters (fy, last_seq) values (${fy}, 1)
-      on conflict (fy) do update set last_seq = invoice_counters.last_seq + 1
+      insert into invoice_counters (branch_id, fy, last_seq) values (${branchId}, ${fy}, 1)
+      on conflict (branch_id, fy) do update set last_seq = invoice_counters.last_seq + 1
       returning last_seq`;
-    const [{ invoice_prefix }] = await tx<{ invoice_prefix: string }[]>`select invoice_prefix from settings where id = 1`;
+    const [prefixRow] = await tx<{ invoice_prefix: string }[]>`
+      select coalesce(nullif(b.invoice_prefix, ''), s.invoice_prefix) as invoice_prefix
+      from settings s, branches b where s.id = 1 and b.id = ${branchId}`;
+    const invoice_prefix = prefixRow?.invoice_prefix ?? "INV";
     const invoiceNo = `${invoice_prefix}/${fy}/${String(seq).padStart(5, "0")}`;
 
     const [inv] = await tx<{ id: number }[]>`
-      insert into invoices (invoice_no, fy, seq, customer_id, customer_name, customer_phone, customer_gstin, is_interstate,
+      insert into invoices (branch_id, invoice_no, fy, seq, customer_id, customer_name, customer_phone, customer_gstin, is_interstate,
         subtotal, discount, taxable, cgst, sgst, igst, round_off, total, cost_total, amount_paid, payment_mode, status, notes, user_id, price_type)
-      values (${invoiceNo}, ${fy}, ${seq}, ${customerId}, ${customerName}, ${data.customer.phone}, ${data.customer.gstin}, ${data.interstate},
+      values (${branchId}, ${invoiceNo}, ${fy}, ${seq}, ${customerId}, ${customerName}, ${data.customer.phone}, ${data.customer.gstin}, ${data.interstate},
         ${bill.subtotal}, ${bill.discount}, ${bill.taxable}, ${bill.cgst}, ${bill.sgst}, ${bill.igst}, ${bill.roundOff}, ${bill.total},
         ${bill.cost}, ${paid}, ${data.paymentMode}, ${status}, ${data.notes}, ${userId}, ${data.priceType})
       returning id`;
@@ -140,16 +144,18 @@ export async function createInvoice(input: InvoiceInput, userId: number) {
 type Tx = TransactionSql<Record<string, unknown>>;
 
 /** Applies stock changes in one statement and writes the stock ledger. */
-export async function applyStock(tx: Tx, changes: { id: number; change: number }[], reason: string, refId: number | null, userId: number, note = "") {
+export async function applyStock(tx: Tx, changes: { id: number; change: number }[], reason: string, refId: number | null, userId: number, note = "", branchId = 1) {
   if (!changes.length) return;
-  const rows = await tx<{ id: number; stock: number }[]>`
+  const rows = await tx<{ id: number; stock: number; branch_id: number }[]>`
     update products p set stock = p.stock + v.change, updated_at = now()
     from (select unnest(${changes.map((c) => c.id)}::bigint[]) as id, unnest(${changes.map((c) => c.change)}::int[]) as change) v
     where p.id = v.id
-    returning p.id, p.stock`;
+    returning p.id, p.stock, p.branch_id`;
   const bal = new Map(rows.map((r) => [r.id, r.stock]));
+  const bra = new Map(rows.map((r) => [r.id, r.branch_id]));
   await tx`insert into stock_movements ${tx(changes.map((c) => ({
     product_id: c.id, change: c.change, balance: bal.get(c.id) ?? 0, reason, ref_id: refId, note, user_id: userId,
+    branch_id: bra.get(c.id) ?? branchId,
   })))}`;
 }
 
