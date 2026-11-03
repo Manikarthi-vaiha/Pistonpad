@@ -145,13 +145,41 @@ export type DocShop = {
 };
 
 export async function loadVehicleDoc(id: number) {
-  const [[doc], [shop]] = await Promise.all([
+  const [[doc], [shopRow]] = await Promise.all([
     sql<VehicleDoc[]>`
       select d.*, to_char(d.doc_date, 'YYYY-MM-DD') as doc_date, u.name as created_by
       from vehicle_invoices d left join users u on u.id = d.user_id where d.id = ${id}`,
-    sql<DocShop[]>`select shop_name, address, phone, email, gstin, logo, logo_type, logo_version from settings where id = 1`,
+    sql<(DocShop & { branch_id: number | null; branch_has_logo: boolean; branch_logo_version: number })[]>`
+      select s.shop_name,
+             coalesce(nullif(b.address,''), s.address) as address,
+             coalesce(nullif(b.phone,''), s.phone) as phone,
+             coalesce(nullif(b.email,''), s.email) as email,
+             s.gstin,
+             coalesce(b.logo, s.logo) as logo,
+             coalesce(b.logo_type, s.logo_type) as logo_type,
+             case when b.logo is not null then b.logo_version else s.logo_version end as logo_version,
+             v.branch_id,
+             b.logo is not null as branch_has_logo,
+             b.logo_version as branch_logo_version
+      from settings s
+      left join vehicle_invoices d on d.id = ${id}
+      left join vehicles v on v.id = d.vehicle_id
+      left join branches b on b.id = v.branch_id
+      where s.id = 1`,
   ]);
-  return doc ? { doc, shop } : null;
+  if (!doc || !shopRow) return null;
+  const { branch_id, branch_has_logo, branch_logo_version, ...shop } = shopRow;
+  const logo_url = branch_has_logo
+    ? `/api/shop-logo?branch=${branch_id}&v=${branch_logo_version}`
+    : shop.logo ? `/api/shop-logo?v=${shop.logo_version}` : null;
+  return { doc, shop, logo_url };
+}
+
+/** Permanently erases a vehicle invoice and its related notes from the database. */
+export async function hardDeleteVehicleDoc(docId: number) {
+  const [doc] = await sql<{ id: number }[]>`select id from vehicle_invoices where id = ${docId}`;
+  if (!doc) throw new Error("Document not found.");
+  await sql`delete from vehicle_invoices where id = ${docId}`;
 }
 
 export async function vehicleDocsFor(vehicleId: number) {

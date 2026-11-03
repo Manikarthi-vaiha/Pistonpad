@@ -2,16 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Ban, FileDown, IndianRupee, Loader2, MessageCircle, Printer, ReceiptIndianRupee, Share2 } from "lucide-react";
-import { Button, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
+import { Ban, FileDown, IndianRupee, Loader2, MessageCircle, Printer, ReceiptIndianRupee, Share2, Trash2 } from "lucide-react";
+import { Button, ConfirmDialog, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { rupees } from "@/lib/format";
-import { addPayment, voidInvoice } from "../actions";
+import { addPayment, deleteInvoicePermanently, voidInvoice } from "../actions";
 
-export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareText, pdfPath }: {
-  invoiceId: number; status: string; due: number; isOwner: boolean; phone: string; shareText: string; pdfPath: string;
+export function InvoiceActions({ invoiceId, status, due, isOwner, isSuperAdmin, phone, shareText, pdfPath }: {
+  invoiceId: number; status: string; due: number; isOwner: boolean; isSuperAdmin: boolean; phone: string; shareText: string; pdfPath: string;
 }) {
   const router = useRouter();
   const [panel, setPanel] = useState<"" | "pay" | "cancel">("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [amount, setAmount] = useState(String(due));
   const [mode, setMode] = useState("Cash");
   const [note, setNote] = useState("");
@@ -57,8 +58,23 @@ export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareTe
       if (r.ok) { setPanel(""); router.refresh(); } else setError(r.error ?? "Could not save.");
     });
 
+  const runDelete = () =>
+    start(async () => {
+      setError("");
+      const r = await deleteInvoicePermanently(invoiceId);
+      if (r.ok) { router.replace("/invoices"); } else setError(r.error ?? "Could not delete.");
+    });
+
   return (
     <div className="flex flex-col items-end gap-3">
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this invoice permanently?"
+        message="All items, payments, and stock movements for this invoice will be erased. This cannot be undone."
+        confirmLabel="Delete permanently"
+        onConfirm={() => { setConfirmDelete(false); runDelete(); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
       <div className="flex flex-wrap justify-end gap-2">
         {status !== "cancelled" && due > 0 ? (
           <Button variant="primary" onClick={() => { setPanel(panel === "pay" ? "" : "pay"); setAmount(String(due)); }}>
@@ -76,6 +92,7 @@ export function InvoiceActions({ invoiceId, status, due, isOwner, phone, shareTe
           <FileDown className="h-4 w-4" /> PDF
         </a>
         {isOwner && status !== "cancelled" ? <Button variant="danger" onClick={() => setPanel(panel === "cancel" ? "" : "cancel")}><Ban className="h-4 w-4" /> Cancel</Button> : null}
+        {isSuperAdmin ? <Button variant="danger" disabled={pending} onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /> Delete</Button> : null}
         <LinkButton href="/billing" variant="secondary"><ReceiptIndianRupee className="h-4 w-4" /> Next bill</LinkButton>
       </div>
 

@@ -191,6 +191,25 @@ export async function getPendingPartsDues(): Promise<PendingPartsDue[]> {
     order by created_at asc`;
 }
 
+/** Permanently erases an invoice from the database. If it was not cancelled, stock is restored first. */
+export async function hardDeleteInvoice(invoiceId: number, userId: number) {
+  return sql.begin(async (tx) => {
+    const [inv] = await tx<{ status: string; invoice_no: string }[]>`
+      select status, invoice_no from invoices where id = ${invoiceId} for update`;
+    if (!inv) throw new BillError("Invoice not found.");
+    if (inv.status !== "cancelled") {
+      const items = await tx<{ product_id: number; qty: number }[]>`
+        select product_id, sum(qty)::int as qty from invoice_items
+        where invoice_id = ${invoiceId} and source = 'stock' group by product_id order by product_id`;
+      if (items.length) {
+        await tx`select id from products where id = any(${items.map((i) => i.product_id)}::bigint[]) order by id for update`;
+        await applyStock(tx, items.map((i) => ({ id: i.product_id, change: i.qty })), "delete", invoiceId, userId, `Deleted ${inv.invoice_no}`);
+      }
+    }
+    await tx`delete from invoices where id = ${invoiceId}`;
+  });
+}
+
 export async function cancelInvoice(invoiceId: number, reason: string, userId: number) {
   return sql.begin(async (tx) => {
     const [inv] = await tx<{ status: string; invoice_no: string }[]>`select status, invoice_no from invoices where id = ${invoiceId} for update`;

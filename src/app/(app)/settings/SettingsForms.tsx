@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { Badge, Button, cx, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import { GST_STATES } from "@/lib/format";
 import type { Shop } from "@/lib/shop";
-import { addBrand, addCategory, addModels, addUser, changePassword, removeLogo, saveShop, setUserActive, toggleModel, uploadLogo, type SettingsState } from "./actions";
+import { addBrand, addCategory, addModels, addUser, changePassword, deleteUser, removeLogo, saveShop, setUserActive, toggleModel, uploadLogo, type SettingsState } from "./actions";
 
 function Msg({ s }: { s: SettingsState }) {
   return s.error ? <Notice tone="bad">{s.error}</Notice> : s.ok ? <Notice tone="good">{s.ok}</Notice> : null;
@@ -52,16 +52,18 @@ function LogoForm({ url }: { url: string | null }) {
           {url ? <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => start(async () => setRemoved(await removeLogo()))}>Remove</Button> : null}
         </form>
       </div>
-      <p className="text-xs text-ink-3">Shown on invoices, the sidebar and the sign-in page. PNG, JPG or WebP, under 1 MB.</p>
+      <p className="text-xs text-ink-3">Shown on invoices, the sidebar and the sign-in page. PNG, JPG or WebP, under 500 KB.</p>
       <Msg s={state.error || state.ok ? state : removed} />
     </div>
   );
 }
 
-export function UsersSettings({ users, me }: { users: { id: number; name: string; username: string; role: string; active: boolean }[]; me: number }) {
+export function UsersSettings({ users, me, branches }: { users: { id: number; name: string; username: string; role: string; active: boolean; branch_name: string | null }[]; me: number; branches: { id: number; name: string }[] }) {
   const [state, action, pending] = useActionState(addUser, {});
   const [msg, setMsg] = useState<SettingsState>({});
   const [busy, start] = useTransition();
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [newRole, setNewRole] = useState("staff");
   return (
     <div className="flex flex-col gap-5 p-5">
       <ul className="divide-y divide-line rounded-lg border border-line">
@@ -69,15 +71,34 @@ export function UsersSettings({ users, me }: { users: { id: number; name: string
           <li key={u.id} className="flex items-center justify-between gap-3 px-4 py-3">
             <div className="min-w-0">
               <p className="font-medium">{u.name} {u.id === me ? <span className="text-ink-3">(you)</span> : null}</p>
-              <p className="text-xs text-ink-3">{u.username}</p>
+              <p className="text-xs text-ink-3">{u.username}{u.role === "staff" && u.branch_name ? <span className="ml-2 text-ink-2">· {u.branch_name}</span> : null}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Badge tone={u.role === "owner" ? "primary" : "neutral"}>{u.role}</Badge>
+              <Badge tone={u.role === "super_admin" ? "bad" : u.role === "owner" ? "primary" : "neutral"}>
+                {u.role === "super_admin" ? "Super Admin" : u.role}
+              </Badge>
               {!u.active ? <Badge tone="bad">Disabled</Badge> : null}
               {u.id !== me ? (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => start(async () => setMsg(await setUserActive(u.id, !u.active)))}>
-                  {u.active ? "Disable" : "Enable"}
-                </Button>
+                <>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => start(async () => setMsg(await setUserActive(u.id, !u.active)))}>
+                    {u.active ? "Disable" : "Enable"}
+                  </Button>
+                  {confirmDelete === u.id ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-xs text-ink-2">Delete?</span>
+                      <Button size="sm" variant="ghost" className="text-bad hover:text-bad" disabled={busy}
+                        onClick={() => start(async () => { setMsg(await deleteUser(u.id)); setConfirmDelete(null); })}>
+                        Yes
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(null)}>No</Button>
+                    </span>
+                  ) : (
+                    <Button size="sm" variant="ghost" className="text-bad hover:text-bad" disabled={busy}
+                      onClick={() => setConfirmDelete(u.id)}>
+                      Delete
+                    </Button>
+                  )}
+                </>
               ) : null}
             </div>
           </li>
@@ -89,7 +110,22 @@ export function UsersSettings({ users, me }: { users: { id: number; name: string
         <Field label="Name"><Input name="name" /></Field>
         <Field label="Username"><Input name="username" autoComplete="off" /></Field>
         <Field label="Password" hint="At least 8 characters"><Input name="password" type="password" autoComplete="new-password" /></Field>
-        <Field label="Role"><Select name="role"><option value="staff">Staff</option><option value="owner">Owner</option></Select></Field>
+        <Field label="Role">
+          <Select name="role" value={newRole}
+            onChange={(e) => setNewRole(e.target.value)}
+            onBlur={(e) => setNewRole(e.target.value)}>
+            <option value="staff">Staff</option>
+            <option value="owner">Owner</option>
+            <option value="super_admin">Super Admin</option>
+          </Select>
+        </Field>
+        <Field label="Branch" hint="Which branch this staff works at"
+          className={newRole === "staff" && branches.length > 0 ? "col-span-full" : "hidden"}>
+          <Select name="branch_id">
+            <option value="">— select branch —</option>
+            {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </Select>
+        </Field>
         <div className="flex flex-col gap-3 sm:col-span-2"><Msg s={state} /><Button disabled={pending} className="self-end">{pending ? "Adding…" : "Add login"}</Button></div>
       </form>
     </div>

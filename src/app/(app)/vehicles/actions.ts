@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { dateLabel } from "@/lib/format";
 import { sql } from "@/lib/db";
-import { addDueNote, DocError, getDueNotes, issueVehicleDoc, markDueReceived, type VehicleDocKind } from "@/lib/vehicle-docs";
+import { addDueNote, DocError, getDueNotes, hardDeleteVehicleDoc, issueVehicleDoc, markDueReceived, type VehicleDocKind } from "@/lib/vehicle-docs";
 import { DOC_CHECKLIST, EVENT_KINDS, INSURANCE_TYPES, normalizeReg, parseReg, PHOTO_KINDS } from "@/lib/regno";
 import { audit } from "@/lib/audit";
 
@@ -114,7 +114,7 @@ export async function saveVehicle(id: number | null, _: VehicleState, f: FormDat
         await tx`update vehicles set ${tx(values)}, updated_at = now() where id = ${id}`;
         return id;
       }
-      const [row] = await tx<{ id: number }[]>`insert into vehicles ${tx({ ...values, created_by: user.uid })} returning id`;
+      const [row] = await tx<{ id: number }[]>`insert into vehicles ${tx({ ...values, created_by: user.uid, branch_id: user.branchId ?? 1 })} returning id`;
       await tx`insert into vehicle_events ${tx({
         vehicle_id: row.id, event_date: d.purchaseDate ?? new Date().toISOString().slice(0, 10), kind: "purchase",
         title: d.purchasedFrom ? `Bought from ${d.purchasedFrom}` : "Added to stock", odometer_km: d.odometerKm, cost: 0, user_id: user.uid,
@@ -417,6 +417,21 @@ export async function cancelVehicleDoc(vehicleId: number, docId: number, reason:
   return { ok: "Cancelled." };
 }
 
+/** Super admin only. Permanently removes a vehicle document from the database. */
+export async function deleteVehicleDocAction(vehicleId: number, docId: number): Promise<VehicleState> {
+  const user = await requireUser("super_admin");
+  try {
+    await hardDeleteVehicleDoc(docId);
+    audit("invoice", "delete", `Permanently deleted vehicle doc ${docId} for vehicle ${vehicleId}`,
+      { entityId: docId, userId: user.uid, userName: user.name });
+    revalidatePath(`/vehicles/${vehicleId}`);
+    redirect(`/vehicles/${vehicleId}`);
+  } catch (e) {
+    if (e instanceof Error && e.message === "NEXT_REDIRECT") throw e;
+    return { error: "Could not delete the document. Please try again." };
+  }
+}
+
 export async function deleteVehicle(vehicleId: number): Promise<VehicleState> {
   const user = await requireUser("owner");
   const [doc] = await sql<{ doc_no: string }[]>`select doc_no from vehicle_invoices where vehicle_id = ${vehicleId} limit 1`;
@@ -439,7 +454,7 @@ export async function uploadPhoto(vehicleId: number, f: FormData): Promise<Vehic
   if (!(photo instanceof File) || !(thumb instanceof File) || !photo.size) return { error: "Choose a photo." };
   if (!(kind in PHOTO_KINDS)) return { error: "Choose what the photo shows." };
   if (!PHOTO_TYPES.includes(photo.type)) return { error: "Only JPG, PNG or WebP photos." };
-  if (photo.size > 1_500_000 || thumb.size > 200_000) return { error: "That photo is too large even after shrinking. Try another." };
+  if (photo.size > 2_000_000 || thumb.size > 200_000) return { error: "That photo is too large even after shrinking. Try another." };
   if (kind === "owner") await sql`delete from vehicle_photos where vehicle_id = ${vehicleId} and kind = 'owner'`; // one owner photo
   await sql`insert into vehicle_photos ${sql({
     vehicle_id: vehicleId, kind, caption: str(f, "caption").trim().slice(0, 120), mime: photo.type,

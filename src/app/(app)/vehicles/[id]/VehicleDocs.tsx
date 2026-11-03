@@ -1,15 +1,15 @@
 "use client";
 
 import { useActionState, useMemo, useState, useTransition } from "react";
-import { Ban, Check, CheckCircle2, FileDown, Info, Loader2, MessageCircle, Printer, Share2 } from "lucide-react";
+import { Ban, Check, CheckCircle2, FileDown, Info, Loader2, MessageCircle, Printer, Share2, Trash2 } from "lucide-react";
 import { DatePicker } from "@/components/DatePicker";
-import { Button, cx, Field, Input, Notice, Select } from "@/components/ui";
+import { Button, ConfirmDialog, cx, Field, Input, Notice, Select } from "@/components/ui";
 import { BIKE_PAYMENT_MODES } from "@/lib/expenses";
 import { isoDate } from "@/lib/format";
 import type { Financier } from "@/lib/financiers";
 import type { DueNote } from "@/lib/vehicle-docs";
 import { DOC_CHECKLIST } from "@/lib/regno";
-import { addDueNoteAction, cancelVehicleDoc, createVehicleDoc, markDueReceivedAction, type VehicleState } from "../actions";
+import { addDueNoteAction, cancelVehicleDoc, createVehicleDoc, deleteVehicleDocAction, markDueReceivedAction, type VehicleState } from "../actions";
 
 /** Tap to tick the papers handed over (sale) or received (purchase). Starts with the papers the shop holds. */
 export function PapersPicker({ initial, label }: { initial: string[]; label: string }) {
@@ -335,11 +335,12 @@ export function DocForm({ vehicleId, kind, defaults, nowTime, summary, financier
 }
 
 /** Print, PDF, share and (owner) cancel, on the document page. */
-export function DocActions({ vehicleId, docId, pdfPath, phone, shareText, cancelled, isOwner }: {
-  vehicleId: number; docId: number; pdfPath: string; phone: string; shareText: string; cancelled: boolean; isOwner: boolean;
+export function DocActions({ vehicleId, docId, pdfPath, phone, shareText, cancelled, isOwner, isSuperAdmin }: {
+  vehicleId: number; docId: number; pdfPath: string; phone: string; shareText: string; cancelled: boolean; isOwner: boolean; isSuperAdmin: boolean;
 }) {
   const [sharing, setSharing] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
@@ -368,6 +369,14 @@ export function DocActions({ vehicleId, docId, pdfPath, phone, shareText, cancel
   };
   return (
     <div className="flex flex-col items-end gap-3">
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this document permanently?"
+        message="The sale/purchase record will be erased from the database. This cannot be undone."
+        confirmLabel="Delete permanently"
+        onConfirm={() => { setConfirmDelete(false); start(async () => { const r = await deleteVehicleDocAction(vehicleId, docId); if (!r.ok) setError(r.error ?? "Could not delete."); }); }}
+        onCancel={() => setConfirmDelete(false)}
+      />
       <div className="flex flex-wrap justify-end gap-2">
         <Button onClick={() => window.print()}><Printer className="h-4 w-4" /> Print</Button>
         <Button onClick={sharePdf} disabled={sharing}>{sharing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" />} Share PDF</Button>
@@ -376,6 +385,7 @@ export function DocActions({ vehicleId, docId, pdfPath, phone, shareText, cancel
           <FileDown className="h-4 w-4" /> PDF
         </a>
         {isOwner && !cancelled ? <Button variant="danger" onClick={() => setCancelOpen((o) => !o)}><Ban className="h-4 w-4" /> Cancel</Button> : null}
+        {isSuperAdmin ? <Button variant="danger" disabled={pending} onClick={() => setConfirmDelete(true)}><Trash2 className="h-4 w-4" /> Delete</Button> : null}
       </div>
       {cancelOpen ? (
         <form className="flex w-full max-w-xl flex-col gap-3 rounded-xl border border-bad/30 bg-bad-soft p-4"

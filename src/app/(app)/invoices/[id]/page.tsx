@@ -19,14 +19,14 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
   const { new: isNew } = await searchParams;
   if (!/^\d+$/.test(id)) notFound();
 
-  const [[inv], items, payments, shop] = await Promise.all([
+  const [[inv], items, payments] = await Promise.all([
     sql`select i.*, to_char(i.invoice_date, 'YYYY-MM-DD') as invoice_date, u.name as billed_by, c.address as customer_address, c.state_code as customer_state
         from invoices i left join users u on u.id = i.user_id left join customers c on c.id = i.customer_id where i.id = ${id}`,
     sql`select * from invoice_items where invoice_id = ${id} order by id`,
     sql`select p.*, to_char(p.paid_on, 'YYYY-MM-DD') as paid_on, u.name as received_by from payments p left join users u on u.id = p.user_id where invoice_id = ${id} order by p.id`,
-    getShop(),
   ]);
   if (!inv) notFound();
+  const shop = await getShop(inv.branch_id);
 
   const due = Math.max(0, inv.total - inv.amount_paid);
   const hsn = new Map<string, { hsn: string; rate: number; taxable: number; tax: number }>();
@@ -47,7 +47,8 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
       <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link href="/invoices" className="flex items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink"><ArrowLeft className="h-4 w-4" /> Invoices</Link>
         <InvoiceActions
-          invoiceId={inv.id} status={inv.status} due={due} isOwner={user.role === "owner"}
+          invoiceId={inv.id} status={inv.status} due={due} isOwner={user.role === "owner" || user.role === "super_admin"}
+          isSuperAdmin={user.role === "super_admin"}
           phone={inv.customer_phone} shareText={shareText} pdfPath={invoicePdfPath(inv.id)}
         />
       </div>

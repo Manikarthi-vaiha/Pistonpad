@@ -5,7 +5,6 @@ import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { Notice } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { vehicleDocPdfPath } from "@/lib/pdf/link";
-import { getShop } from "@/lib/shop";
 import { buildDocModel, getDueNotes, loadVehicleDoc, type DocParty } from "@/lib/vehicle-docs";
 import { DocActions, DueSection } from "../../VehicleDocs";
 
@@ -16,9 +15,9 @@ export default async function VehicleDocPage({ params, searchParams }: PageProps
   const { id, docId } = await params;
   const { new: isNew } = await searchParams;
   if (!/^\d+$/.test(id) || !/^\d+$/.test(docId)) notFound();
-  const [data, shop] = await Promise.all([loadVehicleDoc(Number(docId)), getShop()]);
+  const data = await loadVehicleDoc(Number(docId));
   if (!data || data.doc.vehicle_id !== Number(id)) notFound();
-  const { doc } = data;
+  const { shop, logo_url, doc } = data;
   const dueNotes = doc.due_amount && Number(doc.due_amount) > 0 ? await getDueNotes(doc.id) : [];
   const m = buildDocModel(doc, data.shop);
   const shareText = [`*${m.shop.name}*`, `${m.title} ${m.no} · ${m.date}`, `${m.plate} · ${doc.bike.make} ${doc.bike.model}`, `${m.total[0]}: ${m.total[1]}`].join("\n");
@@ -28,7 +27,7 @@ export default async function VehicleDocPage({ params, searchParams }: PageProps
       <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
         <Link href={`/vehicles/${id}`} className="flex items-center gap-1.5 text-sm font-semibold text-ink-2 hover:text-ink"><ArrowLeft className="h-4 w-4" /> {m.plate}</Link>
         <DocActions vehicleId={Number(id)} docId={doc.id} pdfPath={vehicleDocPdfPath(doc.id)} phone={doc.party_phone} shareText={shareText}
-          cancelled={m.cancelled} isOwner={user.role === "owner"} />
+          cancelled={m.cancelled} isOwner={user.role === "owner" || user.role === "super_admin"} isSuperAdmin={user.role === "super_admin"} />
       </div>
       {isNew && !m.cancelled ? (
         <div className="no-print mb-5">
@@ -41,9 +40,9 @@ export default async function VehicleDocPage({ params, searchParams }: PageProps
         {m.cancelled ? <p aria-hidden className="pointer-events-none absolute inset-0 grid place-items-center text-7xl font-black tracking-widest text-bad/15 -rotate-12">CANCELLED</p> : null}
         <header className="flex flex-wrap items-start justify-between gap-6 border-b-2 border-ink pb-5">
           <div className="flex max-w-md items-start gap-4">
-            {shop.logo_url ? (
+            {logo_url ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={shop.logo_url} alt="" className="h-16 w-16 shrink-0 rounded-full" />
+              <img src={logo_url} alt="" className="h-16 w-16 shrink-0 rounded-full" />
             ) : null}
             <div>
               <h1 className="text-xl font-bold tracking-tight">{m.shop.name}</h1>

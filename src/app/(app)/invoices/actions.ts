@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
-import { BillError, cancelInvoice, createInvoice, receivePayment, type InvoiceInput } from "@/lib/invoices";
+import { BillError, cancelInvoice, createInvoice, hardDeleteInvoice, receivePayment, type InvoiceInput } from "@/lib/invoices";
 
 export type ActionResult<T = unknown> = { ok: true; data: T } | { ok: false, error: string };
 
@@ -16,7 +16,7 @@ function fail(e: unknown): { ok: false; error: string } {
 export async function saveBill(input: InvoiceInput): Promise<ActionResult<{ id: number; invoiceNo: string }>> {
   const user = await requireUser();
   try {
-    const r = await createInvoice(input, user.uid);
+    const r = await createInvoice(input, user.uid, user.branchId ?? 1);
     revalidatePath("/");
     return { ok: true, data: r };
   } catch (e) {
@@ -40,6 +40,17 @@ export async function voidInvoice(invoiceId: number, reason: string): Promise<Ac
   try {
     await cancelInvoice(invoiceId, reason, user.uid);
     revalidatePath(`/invoices/${invoiceId}`);
+    return { ok: true, data: null };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteInvoicePermanently(invoiceId: number): Promise<ActionResult<null>> {
+  const user = await requireUser("super_admin");
+  try {
+    await hardDeleteInvoice(invoiceId, user.uid);
+    revalidatePath("/invoices");
     return { ok: true, data: null };
   } catch (e) {
     return fail(e);

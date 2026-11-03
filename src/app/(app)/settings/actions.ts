@@ -61,15 +61,21 @@ export async function addCategory(_: SettingsState, f: FormData): Promise<Settin
 export async function addUser(_: SettingsState, f: FormData): Promise<SettingsState> {
   const me = await requireUser("owner");
   const name = s(f, "name"), username = s(f, "username").toLowerCase(), password = String(f.get("password") ?? "");
-  const role = f.get("role") === "owner" ? "owner" : "staff";
+  const roleInput = f.get("role");
+  const role = roleInput === "owner" ? "owner" : roleInput === "super_admin" ? "super_admin" : "staff";
+  const branchId = role === "staff" && f.get("branch_id") ? Number(f.get("branch_id")) : null;
   if (!name || !username) return { error: "Enter a name and a username." };
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) return { error: "Usernames use 3–30 letters, numbers, dots or dashes." };
   if (password.length < 8) return { error: "Passwords need at least 8 characters." };
+  if (role === "staff" && !branchId) return { error: "Assign the staff member to a branch." };
   try {
-    await sql`insert into users (name, username, password_hash, role) values (${name}, ${username}, ${await bcrypt.hash(password, 10)}, ${role})`;
+    const [u] = await sql<{ id: number }[]>`
+      insert into users (name, username, password_hash, role) values (${name}, ${username}, ${await bcrypt.hash(password, 10)}, ${role}) returning id`;
+    if (branchId) await sql`insert into user_branches (user_id, branch_id) values (${u.id}, ${branchId}) on conflict do nothing`;
   } catch (e) { if (isUnique(e)) return { error: `The username ${username} is taken.` }; throw e; }
   audit("settings", "add_user", `Added user ${name} (${username}) as ${role}`, { userId: me.uid, userName: me.name });
   revalidatePath("/settings");
+  revalidatePath("/settings/branches");
   return { ok: `${name} can now sign in as ${username}.` };
 }
 
@@ -83,6 +89,29 @@ export async function setUserActive(userId: number, active: boolean): Promise<Se
     { userId: me.uid, userName: me.name });
   revalidatePath("/settings");
   return { ok: active ? "Login enabled." : "Login disabled." };
+}
+
+export async function deleteUser(userId: number): Promise<SettingsState> {
+  const me = await requireUser("owner");
+  if (me.uid === userId) return { error: "You can't delete your own account." };
+  const [u] = await sql<{ name: string; username: string }[]>`select name, username from users where id = ${userId}`;
+  if (!u) return { error: "User not found." };
+  // Nullify references so historical records keep their data but lose the "who did it" link.
+  await sql`update invoices set user_id = null where user_id = ${userId}`;
+  await sql`update payments set user_id = null where user_id = ${userId}`;
+  await sql`update expenses set user_id = null where user_id = ${userId}`;
+  await sql`update purchases set user_id = null where user_id = ${userId}`;
+  await sql`update stock_movements set user_id = null where user_id = ${userId}`;
+  await sql`update vehicle_events set user_id = null where user_id = ${userId}`;
+  await sql`update vehicle_photos set user_id = null where user_id = ${userId}`;
+  await sql`update vehicle_invoices set user_id = null where user_id = ${userId}`;
+  await sql`update vehicle_due_notes set user_id = null where user_id = ${userId}`;
+  await sql`update vehicles set created_by = null where created_by = ${userId}`;
+  await sql`delete from user_branches where user_id = ${userId}`;
+  await sql`delete from users where id = ${userId}`;
+  audit("settings", "delete_user", `Deleted user ${u.name} (${u.username})`, { userId: me.uid, userName: me.name });
+  revalidatePath("/settings");
+  return { ok: `${u.name} has been deleted.` };
 }
 
 export async function changePassword(_: SettingsState, f: FormData): Promise<SettingsState> {
@@ -105,7 +134,7 @@ export async function uploadLogo(_: SettingsState, f: FormData): Promise<Setting
   const file = f.get("logo");
   if (!(file instanceof File) || !file.size) return { error: "Choose an image file." };
   if (!LOGO_TYPES.includes(file.type)) return { error: "Use a PNG, JPG or WebP image." };
-  if (file.size > 1024 * 1024) return { error: "The logo must be under 1 MB. A 400 × 400 px image is plenty." };
+  if (file.size > 500 * 1024) return { error: "The logo must be under 500 KB. A 400 × 400 px image is plenty." };
   const bytes = Buffer.from(await file.arrayBuffer());
   await sql`update settings set logo = ${bytes}, logo_type = ${file.type}, logo_version = logo_version + 1 where id = 1`;
   revalidatePath("/", "layout");
