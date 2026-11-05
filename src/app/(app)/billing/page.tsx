@@ -7,12 +7,13 @@ import { BillingClient } from "./BillingClient";
 export const metadata: Metadata = { title: "New bill" };
 
 export default async function BillingPage() {
-  await requireUser();
+  const user = await requireUser();
   const [s] = await sql<{ state_code: string }[]>`select state_code from settings where id = 1`;
+  const isOwner = user.role === "owner" || user.role === "super_admin";
   return (
     <>
       <PageHeader title="New bill" sub="F2 search · ↑↓ Enter add · F9 save" />
-      <BillingClient shopState={s?.state_code ?? "33"} />
+      <BillingClient shopState={s?.state_code ?? "33"} isOwner={isOwner} />
     </>
   );
 }

@@ -20,7 +20,9 @@ type CustomerHit = { id: number; name: string; phone: string | null; gstin: stri
 
 const MODES = ["Cash", "UPI", "Card", "Bank", "Pay Later"] as const;
 
-export function BillingClient({ shopState }: { shopState: string }) {
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+export function BillingClient({ shopState, isOwner }: { shopState: string; isOwner: boolean }) {
   const router = useRouter();
   const picker = useRef<PartPickerHandle>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -28,6 +30,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
   const [mode, setMode] = useState<(typeof MODES)[number]>("Cash");
   const [paidInput, setPaidInput] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState(todayStr());
   const [priceType, setPriceType] = useState<PriceType>("wholesale");
   const [error, setError] = useState("");
   const [pending, start] = useTransition();
@@ -72,7 +75,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
     setLines((ls) => ls.map((l) => ({ ...l, rate: rateFor(l.part, t) })));
   };
   const reset = () => {
-    setLines([]); setCustomer({ name: "", phone: "", gstin: "" }); setMode("Cash"); setPaidInput(null); setNotes(""); setError(""); setInterstateOverride(null);
+    setLines([]); setCustomer({ name: "", phone: "", gstin: "" }); setMode("Cash"); setPaidInput(null); setNotes(""); setInvoiceDate(todayStr()); setError(""); setInterstateOverride(null);
     picker.current?.focus();
   };
 
@@ -99,6 +102,7 @@ export function BillingClient({ shopState }: { shopState: string }) {
         paymentMode: mode,
         amountPaid: isPayLater ? 0 : bill.total,
         notes,
+        invoiceDate: isOwner ? invoiceDate : undefined,
       });
       if (r.ok) router.push(`/invoices/${r.data.id}?new=1`);
       else setError(r.error);
@@ -270,6 +274,12 @@ export function BillingClient({ shopState }: { shopState: string }) {
             <Field label="Note on bill (optional)">
               <Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Vehicle no., mechanic name…" />
             </Field>
+
+            {isOwner ? (
+              <Field label="Bill date" hint="Change to backdate a bill to a previous month">
+                <Input type="date" value={invoiceDate} max={todayStr()} onChange={(e) => setInvoiceDate(e.target.value)} />
+              </Field>
+            ) : null}
 
             {error ? <Notice tone="bad">{error}</Notice> : null}
             <div className="grid grid-cols-[auto_1fr] gap-2">

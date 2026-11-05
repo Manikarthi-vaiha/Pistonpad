@@ -34,6 +34,7 @@ export const invoiceInput = z.object({
   paymentMode: z.enum(PAYMENT_MODES),
   amountPaid: z.number().nonnegative(),
   notes: z.string().max(500).default(""),
+  invoiceDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 export type InvoiceInput = z.infer<typeof invoiceInput>;
 
@@ -119,10 +120,11 @@ export async function createInvoice(input: InvoiceInput, userId: number, branchI
 
     const [inv] = await tx<{ id: number }[]>`
       insert into invoices (branch_id, invoice_no, fy, seq, customer_id, customer_name, customer_phone, customer_gstin, is_interstate,
-        subtotal, discount, taxable, cgst, sgst, igst, round_off, total, cost_total, amount_paid, payment_mode, status, notes, user_id, price_type)
+        subtotal, discount, taxable, cgst, sgst, igst, round_off, total, cost_total, amount_paid, payment_mode, status, notes, user_id, price_type, invoice_date)
       values (${branchId}, ${invoiceNo}, ${fy}, ${seq}, ${customerId}, ${customerName}, ${data.customer.phone}, ${data.customer.gstin}, ${data.interstate},
         ${bill.subtotal}, ${bill.discount}, ${bill.taxable}, ${bill.cgst}, ${bill.sgst}, ${bill.igst}, ${bill.roundOff}, ${bill.total},
-        ${bill.cost}, ${paid}, ${data.paymentMode}, ${status}, ${data.notes}, ${userId}, ${data.priceType})
+        ${bill.cost}, ${paid}, ${data.paymentMode}, ${status}, ${data.notes}, ${userId}, ${data.priceType},
+        ${data.invoiceDate ?? null}::date)
       returning id`;
 
     await tx`insert into invoice_items ${tx(lines.map((l, i) => ({
