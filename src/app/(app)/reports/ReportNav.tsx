@@ -8,6 +8,7 @@ const TABS = [
   { href: "/reports", label: "Combined" },
   { href: "/reports/parts", label: "Spare parts" },
   { href: "/reports/vehicles", label: "Used bikes" },
+  { href: "/reports/daily", label: "Day book" },
 ] as const;
 
 /** Business tabs + date range, shared by every report page. */
